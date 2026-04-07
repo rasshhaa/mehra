@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+backend/uploads/*.jpg
+backend/uploads/*.png
+frontend/static/annotated_*.jpg
+frontend/static/capture_*.jpg
+frontend/static/inspection_report.pdf
+.DS_Store
+*.egg-info/
+dist/
+build/
