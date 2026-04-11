@@ -17,7 +17,8 @@ from report import generate_report, generate_ai_analysis  # ✅ FIXED: removed d
 import base64
 from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
-
+from garage_report import generate_garage_service_report
+from carlife_report import generate_car_life_report
 import firebase_admin
 from firebase_admin import credentials, firestore
 load_dotenv()
@@ -436,7 +437,82 @@ async def get_insurance_companies():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ── /generate-garage-report ───────────────────────────────────────────────────
+class GarageReportRequest(BaseModel):
+    appointment: dict = {}
+    vehicle_info: dict = {}
+    services_completed: list = []
+    defects_from_ai: list = []
+    insurance_approved: bool = False
+    approved_amount: str = ""
+    technician_name: str = ""
+    technician_notes: str = ""
 
+GARAGE_REPORT_PATH = os.path.join(STATIC_DIR, "garage_service_report.pdf")
+
+@app.post("/generate-garage-report")
+async def generate_garage_report_endpoint(req: GarageReportRequest):
+    try:
+        generate_garage_service_report(
+            appointment        = req.appointment,
+            vehicle_info       = req.vehicle_info,
+            services_completed = req.services_completed,
+            defects_from_ai    = req.defects_from_ai,
+            output_path        = GARAGE_REPORT_PATH,
+            insurance_approved = req.insurance_approved,
+            approved_amount    = req.approved_amount,
+            technician_name    = req.technician_name,
+            technician_notes   = req.technician_notes
+        )
+        return {"success": True, "report_url": "/garage-report"}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Garage report failed: {str(e)}")
+
+@app.get("/garage-report")
+def get_garage_report():
+    if not os.path.exists(GARAGE_REPORT_PATH):
+        raise HTTPException(status_code=404, detail="Garage report not generated yet.")
+    return FileResponse(
+        GARAGE_REPORT_PATH,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=MEHRA_Garage_Service_Report.pdf"}
+    )
+# ── /generate-carlife-report ──────────────────────────────────────────────────
+class CarLifeReportRequest(BaseModel):
+    vehicle_info: dict = {}
+    inspections: list = []
+    services: list = []
+    appointments: list = []
+    owner_name: str = ""
+
+CARLIFE_REPORT_PATH = os.path.join(STATIC_DIR, "carlife_report.pdf")
+
+@app.post("/generate-carlife-report")
+async def generate_carlife_report_endpoint(req: CarLifeReportRequest):
+    try:
+        generate_car_life_report(
+            vehicle_info = req.vehicle_info,
+            inspections  = req.inspections,
+            services     = req.services,
+            appointments = req.appointments,
+            output_path  = CARLIFE_REPORT_PATH,
+            owner_name   = req.owner_name
+        )
+        return {"success": True, "report_url": "/carlife-report"}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Car Life report failed: {str(e)}")
+
+@app.get("/carlife-report")
+def get_carlife_report():
+    if not os.path.exists(CARLIFE_REPORT_PATH):
+        raise HTTPException(status_code=404, detail="Car Life report not generated yet.")
+    return FileResponse(
+        CARLIFE_REPORT_PATH,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=MEHRA_Car_Life_Report.pdf"}
+    )
 # ── Static routes ─────────────────────────────────────────────────────────────
 @app.get("/")
 async def read_root():
@@ -539,6 +615,5 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "../frontend/static")
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount("/static", StaticFiles(directory="../frontend/static"), name="static")
 
