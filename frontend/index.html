@@ -4776,7 +4776,7 @@ const myAppts = allAppts.filter(a => a.ownerId === uid);
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': 'Bearer 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'
+                    'Authorization': 'Bearer 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'
                 },
                 body: JSON.stringify({
                     model: 'llama-3.3-70b-versatile',
@@ -7715,93 +7715,79 @@ function fileToBase64(file) {
         reader.readAsDataURL(file);
     });
 }
+function fetchWithTimeout(url, options, ms = 20000) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...options, signal: ctrl.signal })
+    .finally(() => clearTimeout(id));
+}
 // ==================== UPDATED GROQ VISION CALL ====================
 async function callGroqVision(base64Images) {
-    const GROQ_API_KEY = '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';
+  const GROQ_API_KEY = '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';
+  
+  const MODELS = [
+    'meta-llama/llama-4-scout-17b-16e-instruct',
+    'llama-3.2-11b-vision-preview',
+    'llama-3.2-90b-vision-preview',
+  ];
 
-    const prompt = `You are an expert OCR system specialized in UAE Mulkiya (Vehicle Registration Card) documents.
+  const prompt = `You are an expert OCR system for UAE Mulkiya cards.
+Extract all text and return ONLY valid JSON with NO markdown. Use "—" for missing fields.
+Keys: ownerName, ownerNationality, trafficCode, registrationDate,
+registrationExpiry, insuranceExpiry, insuranceCompany, insurancePolicy,
+mortgagedBy, plateNumber, placeOfIssue, plateKind, vin, engineNumber,
+make, model, year, vehicleType, bodyType, color, unladenWeight,
+grossWeight, cylinders, fuelType, seats`;
 
-UAE Mulkiya cards have TWO sides:
-- FRONT: Owner name, nationality, TC number, plate number, registration dates, insurance info
-- BACK: Vehicle details like VIN/chassis, engine number, make, body type, year, color, weight, cylinders, fuel type
-
-Extract ALL visible text carefully. Dates appear as DD-MM-YYYY or DD-MON-YYYY format.
-Plate numbers appear as "X / NNNNN" format (letter or number / 5 digits).
-
-Return ONLY a valid JSON object with NO markdown, NO explanation, NO extra text.
-Use exactly these keys. Use "—" for any field not found:
-
-{
-  "ownerName": "full name in English",
-  "ownerNationality": "nationality",
-  "trafficCode": "TC number digits only",
-  "registrationDate": "date found",
-  "registrationExpiry": "expiry date",
-  "insuranceExpiry": "insurance expiry date",
-  "insuranceCompany": "insurance company name",
-  "insurancePolicy": "policy number",
-  "mortgagedBy": "bank or finance company name or None",
-  "plateNumber": "e.g. A / 12345",
-  "placeOfIssue": "emirate name e.g. Dubai",
-  "plateKind": "Private or Commercial etc",
-  "vin": "chassis/VIN number alphanumeric",
-  "engineNumber": "engine number",
-  "make": "vehicle brand e.g. Toyota",
-  "model": "model name",
-  "year": "4 digit year",
-  "vehicleType": "type",
-  "bodyType": "body type e.g. Sedan SUV",
-  "color": "color in English",
-  "unladenWeight": "number KG",
-  "grossWeight": "number KG",
-  "cylinders": "number only",
-  "fuelType": "Petrol or Diesel or Electric",
-  "seats": "number only"
-}`;
-
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
+  for (const model of MODELS) {
+    try {
+      console.log('[Groq] Trying model:', model);
+      const response = await fetchWithTimeout(
+        'https://api.groq.com/openai/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${GROQ_API_KEY}`
-        },
-        body: JSON.stringify({
-            model: "llama-3.2-11b-vision-preview",
+          },
+          body: JSON.stringify({
+            model,
             messages: [{
-                role: "user",
-                content: [
-                    {
-                        type: "text",
-                        text: prompt
-                    },
-                    ...base64Images.map(b64 => ({
-                        type: "image_url",
-                        image_url: { 
-                            url: b64,
-                            detail: "high"
-                        }
-                    }))
-                ]
+              role: 'user',
+              content: [
+                { type: 'text', text: prompt },
+                ...base64Images.map(b64 => ({
+                  type: 'image_url',
+                  image_url: { url: b64, detail: 'high' }
+                }))
+                  ]
             }],
             temperature: 0.0,
             max_tokens: 1024
-        })
-    });
+          })
+        },
+        20000
+      );
 
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Groq API Error ${response.status}: ${errText}`);
+      if (!response.ok) {
+        const err = await response.text();
+        console.warn(`[Groq] ${model} failed ${response.status}:`, err);
+        continue;
+      }
+
+      const data = await response.json();
+      const text = (data?.choices?.[0]?.message?.content || '').trim();
+      if (!text) { console.warn('[Groq] Empty response from', model); continue; }
+      console.log('[Groq] Success with', model);
+      return text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+
+    } catch (e) {
+      console.warn(`[Groq] ${model} error:`, e.message);
+      if (e.name === 'AbortError') toast(`Model ${model} timed out, trying next...`, 'info');
     }
+  }
 
-    const data = await response.json();
-    if (!data.choices || !data.choices.length) {
-        throw new Error('No response from Groq Vision');
-    }
-
-    let text = data.choices[0].message.content || '';
-    // Strip any markdown fences if model adds them
-    text = text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
-    return text;
+  throw new Error('All Groq Vision models failed — check console for details');
 }
 
 function parseGroqResponse(text) {
