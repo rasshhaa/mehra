@@ -86,7 +86,7 @@ Press `F5` (or Run → Start Debugging) → select "Run MEHRA Backend"
 **Option B — Terminal:**
 ```bash
 cd backend
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --reload
 ```
 
 ### Step 5 — Open the frontend
