@@ -2144,9 +2144,13 @@ async function getAllAppointments() {
                 const vin = (document.getElementById('vin').value || '—').trim();
                 const year = (document.getElementById('year').value || '').trim();
                 const defects = data.defects_detected || [];
-                const uniqueTypes = data.unique_defect_types != null
-                    ? data.unique_defect_types
-                    : new Set(defects.map(d => (Array.isArray(d) ? d[0] : d.label || '').toLowerCase()).filter(Boolean)).size;
+            const uniqueTypes = data.unique_defect_types != null
+    ? data.unique_defect_types
+    : new Set(defects.map(d => {
+        const raw = Array.isArray(d) ? d[0] : (d.label || '');
+        // Strip severity suffix so "Door — Moderate Dent" and "Door — Severe Dent" count as one
+        return raw.includes(' — ') ? raw.split(' — ')[0].trim().toLowerCase() : raw.toLowerCase();
+    }).filter(Boolean)).size;
                 const status = uniqueTypes === 0 ? 'pass' : uniqueTypes <= 2 ? 'attention' : 'fail';
                 let image = '';
                 if (state.files && state.files.length > 0) {
@@ -5182,15 +5186,28 @@ function buildCarLifePDF(vehicleName, plate, vin, mulkiya, inspections, serviceR
             state.liveCameraResult = null;
             showScanOverlay(state.files);
             document.getElementById('inlineResults').classList.remove('visible');
+            document.getElementById('resGalleryGrid').innerHTML = '';
+document.getElementById('resDefectGrid').innerHTML = '';
+state.batchAnnotated = [];
+state.perImageDefects = [];
             const fd = new FormData();
             state.files.forEach(f => fd.append('files', f));
             appendVehicleInfo(fd);
             try {
-                const res = await fetch(`${API}/inspect`, { method: 'POST', body: fd });
-                if (!res.ok) throw new Error((await res.json()).detail || 'Inspection failed');
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s for cold starts
+const res = await fetch(`${API}/inspect`, { method: 'POST', body: fd, signal: controller.signal })
+    .catch(err => {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') throw new Error('Analysis timed out after 2 minutes — please try again');
+        throw err;
+    });
+clearTimeout(timeoutId);
+      if (!res.ok) throw new Error((await res.json()).detail || 'Inspection failed');
                 const data = await res.json();
-                state.batchDefects = data.defects_detected || [];
-                state.batchAnnotated = data.annotated_images || [];
+state.batchDefects  = data.defects_detected  || [];
+state.batchEnriched = data.defects_enriched   || [];  // ← ADD THIS              
+state.batchAnnotated = data.annotated_images || [];
                 state.batchDone = true;
                 state.crossedIndices = new Set();
                 const annotated = data.annotated_images || [];
@@ -5208,10 +5225,15 @@ function buildCarLifePDF(vehicleName, plate, vin, mulkiya, inspections, serviceR
                 hideScanOverlay();
                 populateInlineResults(data);
                 toast(`✓ Analysis complete — ${data.total_defects_detected || state.batchDefects.length} defects found`, 'success');
-            } catch (e) {
-    hideScanOverlay();                    // ← This was missing / not always reached
+  } catch (e) {
+    hideScanOverlay();
     console.error("Inspection API Error:", e);
-    toast(e.message || "Failed to process images. Please try again.", "error");
+    const msg = e.name === 'AbortError'
+        ? 'Analysis timed out — Roboflow may be cold-starting, try again in 30s'
+        : (e.message || 'Failed to process images. Please try again.');
+    toast(msg, 'error');
+    document.getElementById('btnAnalyze').style.display = 'inline-flex';
+    document.getElementById('btnAnalyze').disabled = false;
 }
             _batchRunning = false;
             btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Re-Analyze';
@@ -5222,60 +5244,148 @@ function buildCarLifePDF(vehicleName, plate, vin, mulkiya, inspections, serviceR
             const annotated = data.annotated_images || [];
             const imgCount = data.image_count || state.files.length;
             const ts = Date.now();
-            const gallery = document.getElementById('resGalleryGrid'); gallery.innerHTML = '';
+const enrichedByImage = data.defects_enriched
+    ? _groupEnrichedByImage(data.defects_enriched, data.annotated_images || [])
+    : null;            const gallery = document.getElementById('resGalleryGrid'); gallery.innerHTML = '';
             const crossSVG = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><line x1="4" y1="4" x2="96" y2="96" stroke="rgba(255,68,68,0.85)" stroke-width="3" stroke-linecap="round"/><line x1="96" y1="4" x2="4" y2="96" stroke="rgba(255,68,68,0.85)" stroke-width="3" stroke-linecap="round"/></svg>`;
-            const count = annotated.length || imgCount;
-            for (let i = 0; i < count; i++) {
-                const item = document.createElement('div');
-                item.className = 'res-gallery-item'; item.dataset.imgIndex = i;
-                if (annotated[i]) {
-                    item.innerHTML = `<img src="${API}/${annotated[i]}?t=${ts}" alt="Annotated ${i + 1}" onerror="this.style.display='none'"><div class="res-cross-overlay">${crossSVG}</div><div class="res-gallery-badge">IMG ${i + 1}</div><button class="res-gallery-dismiss" title="Exclude from report" onclick="toggleGalleryItem(this)">✕</button>`;
-                } else {
-                    item.innerHTML = `<div class="res-gallery-placeholder"><span>🚗</span><p>Image ${i + 1}</p></div><div class="res-cross-overlay">${crossSVG}</div><button class="res-gallery-dismiss" onclick="toggleGalleryItem(this)">✕</button>`;
-                }
-                gallery.appendChild(item);
-            }
+        // Only render slots that actually have annotated images
+// For un-annotated uploads (no detections), show the original preview instead
+const totalUploaded = state.files.length || imgCount;
+
+for (let i = 0; i < totalUploaded; i++) {
+    const item = document.createElement('div');
+    item.className = 'res-gallery-item'; item.dataset.imgIndex = i;
+
+    if (annotated[i]) {
+        // Annotated image exists — show it normally
+       item.innerHTML = `
+    <img src="${API}/${annotated[i]}?t=${Date.now()}&r=${Math.random()}"
+                 alt="Annotated ${i + 1}" 
+                 onerror="this.src=''; this.closest('.res-gallery-item').classList.add('img-load-error')">
+            <div class="res-cross-overlay">${crossSVG}</div>
+            <div class="res-gallery-badge">IMG ${i + 1}</div>
+            <div class="res-gallery-sub-badge" style="position:absolute;bottom:8px;left:8px;background:rgba(74,222,128,0.9);color:#000;font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:6px;font-family:'JetBrains Mono',monospace;">ANNOTATED</div>
+            <button class="res-gallery-dismiss" title="Exclude from report" onclick="toggleGalleryItem(this)">✕</button>`;
+
+    } else if (state.files[i]) {
+        // No annotation for this image — show original upload with "No defects" badge
+        const originalUrl = URL.createObjectURL(state.files[i]);
+        item.innerHTML = `
+            <img src="${originalUrl}" alt="Image ${i + 1}" style="opacity:0.6">
+            <div class="res-cross-overlay" style="opacity:0.3">${crossSVG}</div>
+            <div class="res-gallery-badge">IMG ${i + 1}</div>
+            <div class="res-gallery-sub-badge" style="position:absolute;bottom:8px;left:8px;background:rgba(200,216,228,0.85);color:#0a1628;font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:6px;font-family:'JetBrains Mono',monospace;">NO DEFECTS</div>
+            <button class="res-gallery-dismiss" title="Exclude from report" onclick="toggleGalleryItem(this)" style="opacity:0.6">✕</button>`;
+        // Mark as already crossed since no defects — don't include in report count
+        item.classList.add('no-defects-img');
+
+    } else {
+        // Fallback — no file reference either (live camera case)
+        item.innerHTML = `
+            <div class="res-gallery-placeholder" style="opacity:0.4">
+                <span style="font-size:1.5rem">✓</span>
+                <p style="font-size:0.75rem;color:var(--tm)">Image ${i + 1}<br>No defects found</p>
+            </div>
+            <div class="res-gallery-badge">IMG ${i + 1}</div>`;
+        item.classList.add('no-defects-img');
+    }
+
+    gallery.appendChild(item);
+}
             refreshInlineStats();
             document.getElementById('inlineResults').classList.add('visible');
             setTimeout(() => document.getElementById('inlineResults').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
         }
+        function _groupEnrichedByImage(enriched, annotatedPaths) {
+    // Groups enriched defect dicts by image index (best effort)
+    // Returns array of arrays matching annotatedPaths order
+    const result = annotatedPaths.map(() => []);
+    enriched.forEach((d, i) => {
+        const imgIdx = i % Math.max(1, annotatedPaths.length);
+        result[imgIdx].push(d);
+    });
+    return result;
+}
+
+function _getSeverityTierColor(tier) {
+    return tier === 'severe'   ? '#ff4444'
+         : tier === 'moderate' ? '#f59e0b'
+         : '#4ade80';
+}
 
         function refreshInlineStats() {
-            let active = [];
-            if (state.perImageDefects.length) {
-                state.perImageDefects.forEach((img, i) => { if (!state.crossedIndices.has(i)) active.push(...img.defects); });
-            } else {
-                active = [...state.batchDefects];
-            }
-            const totalImgs = state.perImageDefects.length || state.batchAnnotated.length || state.files.length;
-            document.getElementById('resImgCount').textContent = totalImgs - state.crossedIndices.size;
-            const grouped = {};
-            active.forEach(d => {
-                const name = Array.isArray(d) ? (d[0] || 'Unknown') : (d.label || d.class || 'Unknown');
-                const conf = Array.isArray(d) ? (d[1] || 0) : (d.confidence || 0);
-                const k = name.toLowerCase();
-                if (!grouped[k] || grouped[k].conf < conf) grouped[k] = { name, conf };
-            });
-            const sorted = Object.values(grouped).sort((a, b) => b.conf - a.conf);
-            const defEl = document.getElementById('resDefectCount');
-            defEl.textContent = sorted.length;
-            defEl.className = 'res-stat-val ' + (sorted.length === 0 ? 'green' : sorted.length <= 2 ? 'yellow' : 'red');
-            const avg = active.length ? Math.round(active.reduce((s, d) => s + (Array.isArray(d) ? d[1] : d.confidence || 0), 0) / active.length) : 0;
-            const cEl = document.getElementById('resConfidence');
-            cEl.textContent = avg + '%';
-            cEl.className = 'res-stat-val ' + (avg >= 80 ? 'green' : avg >= 60 ? 'yellow' : 'red');
-            const dg = document.getElementById('resDefectGrid'); dg.innerHTML = '';
-            if (!sorted.length) {
-                dg.innerHTML = `<div class="res-no-defects">✅ No damage detected — vehicle looks clean!</div>`;
-            } else {
-                sorted.forEach(({ name, conf }) => {
-                    const row = document.createElement('div'); row.className = 'res-defect-row';
-                    row.innerHTML = `<div class="res-defect-name">${name}</div><div class="res-defect-bar-wrap"><div class="res-defect-bar" style="width:0%"></div></div><div class="res-defect-conf">${conf}%</div>`;
-                    dg.appendChild(row);
-                    requestAnimationFrame(() => requestAnimationFrame(() => { row.querySelector('.res-defect-bar').style.width = conf + '%'; }));
-                });
-            }
+    let active = [];
+    if (state.perImageDefects.length > 0) {
+        state.perImageDefects.forEach((img, i) => {
+            if (!state.crossedIndices.has(i)) active.push(...img.defects);
+        });
+    } else {
+        active = [...state.batchDefects];
+    }
+
+    const totalImgs = state.perImageDefects.length || state.batchAnnotated.length || state.files.length;
+    document.getElementById('resImgCount').textContent = totalImgs - state.crossedIndices.size;
+
+    // Group by BASE PART (strip " — SeverityClass" suffix from dual-model labels)
+    const grouped = {};
+    active.forEach(d => {
+        const rawName = Array.isArray(d) ? (d[0] || 'Unknown') : (d.label || d.class || 'Unknown');
+        const conf    = Array.isArray(d) ? (d[1] || 0) : (d.confidence || 0);
+        // Extract part name — everything before " — "
+        const partName = rawName.includes(' — ') ? rawName.split(' — ')[0].trim() : rawName;
+        const sevName  = rawName.includes(' — ') ? rawName.split(' — ')[1].trim() : null;
+        const key = partName.toLowerCase();
+        if (!grouped[key] || grouped[key].conf < conf) {
+            grouped[key] = { name: partName, sev: sevName, conf, full: rawName };
         }
+    });
+
+    const sorted = Object.values(grouped).sort((a, b) => b.conf - a.conf);
+
+    const defEl = document.getElementById('resDefectCount');
+    defEl.textContent = sorted.length;
+    defEl.className = 'res-stat-val ' + (sorted.length === 0 ? 'green' : sorted.length <= 2 ? 'yellow' : 'red');
+
+    const avg = active.length
+        ? Math.round(active.reduce((s, d) => s + (Array.isArray(d) ? d[1] : d.confidence || 0), 0) / active.length)
+        : 0;
+    const cEl = document.getElementById('resConfidence');
+    cEl.textContent = avg + '%';
+    cEl.className = 'res-stat-val ' + (avg >= 80 ? 'green' : avg >= 60 ? 'yellow' : 'red');
+
+    const dg = document.getElementById('resDefectGrid');
+    dg.innerHTML = '';
+
+    if (!sorted.length) {
+        dg.innerHTML = `<div class="res-no-defects">✅ No damage detected — vehicle looks clean!</div>`;
+    } else {
+        sorted.forEach(({ name, sev, conf }) => {
+            const tier      = conf >= 80 ? 'severe' : conf >= 55 ? 'moderate' : 'minor';
+            const tierColor = tier === 'severe' ? '#ff4444' : tier === 'moderate' ? '#f59e0b' : '#4ade80';
+            const sevLabel  = sev || (tier.charAt(0).toUpperCase() + tier.slice(1));
+
+            const row = document.createElement('div');
+            row.className = 'res-defect-row';
+            row.style.cssText = 'display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05)';
+            row.innerHTML = `
+                <div class="res-defect-name" style="font-weight:700">${name}</div>
+                <span style="font-size:0.65rem;font-weight:800;padding:2px 8px;border-radius:10px;
+                    background:${tierColor}18;color:${tierColor};border:1px solid ${tierColor}30;
+                    font-family:'JetBrains Mono',monospace;white-space:nowrap">${sevLabel}</span>
+                <div class="res-defect-conf" style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:var(--tm)">${conf}%</div>
+            `;
+            // Bar
+            const barWrap = document.createElement('div');
+            barWrap.style.cssText = 'grid-column:1/-1;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;margin-top:-4px;';
+            const barFill = document.createElement('div');
+            barFill.style.cssText = `width:0%;height:100%;border-radius:2px;background:${tierColor};transition:width 0.6s ease`;
+            barWrap.appendChild(barFill);
+            row.appendChild(barWrap);
+            dg.appendChild(row);
+            requestAnimationFrame(() => requestAnimationFrame(() => { barFill.style.width = conf + '%'; }));
+        });
+    }
+}
 
         function toggleGalleryItem(btn) {
             const item = btn.closest('.res-gallery-item');
@@ -5924,13 +6034,17 @@ if (_currentRole === 'garage' && _garageServiceType) {
                 : new Set(defectsNorm.map(d => (d[0] || '').toLowerCase()).filter(Boolean)).size;
             const verdict = ut === 0 ? 'PASS' : ut <= 2 ? 'ATTENTION' : 'FAIL';
             const vc = verdict === 'PASS' ? 'pass' : verdict === 'ATTENTION' ? 'attention' : 'fail';
-            const grouped = {};
-            defectsNorm.forEach(([n, c]) => {
-                const k = (n || 'Unknown').toLowerCase();
-                if (!grouped[k]) grouped[k] = { name: n || 'Unknown', confs: [] };
-                grouped[k].confs.push(c);
-            });
-            const gl = Object.values(grouped).map(g => ({ name: g.name, max: Math.max(...g.confs) })).sort((a, b) => b.max - a.max);
+      // Group by BASE PART for the verdict display
+const grouped = {};
+defectsNorm.forEach(([n, c]) => {
+    const partName = n.includes(' — ') ? n.split(' — ')[0].trim() : n;
+    const sevName  = n.includes(' — ') ? n.split(' — ')[1].trim() : null;
+    const k = partName.toLowerCase();
+    if (!grouped[k] || grouped[k].max < c) {
+        grouped[k] = { name: partName, sev: sevName, full: n, max: c };
+    }
+});
+const gl = Object.values(grouped).sort((a, b) => b.max - a.max);
             const annotated = data.annotated_images || [];
             const ar = data.engine_result || state.audioResult;
             const ts = Date.now();
@@ -5944,8 +6058,20 @@ if (_currentRole === 'garage' && _garageServiceType) {
       <div class="panel" style="padding:20px">
         <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tm);margin-bottom:14px;font-family:'JetBrains Mono',monospace">Detected Components</div>
         ${gl.length
-                    ? `<div class="defect-list">${gl.map(d => `<div class="ditem"><div class="ditem-name">${d.name}</div><div class="ditem-bar"><div class="ditem-fill" style="width:${d.max}%"></div></div><div class="ditem-conf">${d.max}%</div></div>`).join('')}</div>`
-                    : `<div style="color:var(--green);font-weight:600;padding:8px 0">✓ No damage detected</div>`}
+? `<div class="defect-list">${gl.map(d => {
+    const tier      = d.max >= 80 ? 'severe' : d.max >= 55 ? 'moderate' : 'minor';
+    const tierColor = tier === 'severe' ? '#ff4444' : tier === 'moderate' ? '#f59e0b' : '#4ade80';
+    const sevLabel  = d.sev || (tier.charAt(0).toUpperCase() + tier.slice(1));
+    return `<div class="ditem">
+        <div class="ditem-name">${d.name}
+            <span style="font-size:0.62rem;font-weight:800;padding:1px 7px;border-radius:8px;
+                background:${tierColor}18;color:${tierColor};border:1px solid ${tierColor}30;
+                margin-left:8px;font-family:'JetBrains Mono',monospace;">${sevLabel}</span>
+        </div>
+        <div class="ditem-bar"><div class="ditem-fill" style="width:${d.max}%"></div></div>
+        <div class="ditem-conf">${d.max}%</div>
+    </div>`;
+}).join('')}</div>`                    : `<div style="color:var(--green);font-weight:600;padding:8px 0">✓ No damage detected</div>`}
       </div>
     </div>`;
             if (ar) {
@@ -6004,6 +6130,14 @@ if (_currentRole === 'garage' && _garageServiceType) {
             const rp = document.getElementById('recordedPlayerEl'); rp.pause(); rp.src = '';
             document.getElementById('resultsArea').style.display = 'none';
             document.getElementById('pdfViewerSection').style.display = 'none';
+            // Clear stale gallery
+document.getElementById('resGalleryGrid').innerHTML = '';
+document.getElementById('resDefectGrid').innerHTML = '';
+document.getElementById('inlineResults').classList.remove('visible');
+state.batchAnnotated = [];
+state.batchDefects = [];
+state.perImageDefects = [];
+state.crossedIndices = new Set();
             document.getElementById('aiAnalysisPanel').style.display = 'none';
             document.getElementById('btnGenerate').style.display = 'inline-flex';
             document.getElementById('generateLoading').style.display = 'none';
@@ -8338,9 +8472,29 @@ mulkiyaStyle.innerHTML = `
         from { opacity: 0; transform: translateY(8px); }
         to   { opacity: 1; transform: translateY(0); }
     }
+
+    /* ── NEW: Gallery image states ───────────────────────── */
+    .res-gallery-item.img-load-error {
+        background: rgba(255,68,68,0.06);
+        border: 1px dashed rgba(255,68,68,0.3);
+        position: relative;
+    }
+    .res-gallery-item.img-load-error::after {
+        content: 'Failed to load';
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--red);
+        font-size: 0.72rem;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    .res-gallery-item.no-defects-img {
+        opacity: 0.7;
+    }
 `;
 document.head.appendChild(mulkiyaStyle);
-
 
 
 // ═══════════════════════════════════════════════════════════
