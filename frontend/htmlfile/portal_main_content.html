@@ -1,0 +1,1531 @@
+        <!-- ── PORTAL MAIN ── -->
+        <main class="portal-main">
+
+            <!-- Top Bar with Bell -->
+            <div class="portal-top-bar"
+                style="position:fixed;top:28px;right:28px;z-index:90;display:flex;align-items:center;gap:16px;">
+                <div style="position:relative;cursor:pointer;background:var(--bg3);padding:10px;border-radius:12px;border:1px solid var(--border)"
+                    onclick="portalGoTo('inbox')">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--tm)" stroke-width="2"
+                        style="transition:stroke .2s" onmouseover="this.style.stroke='var(--c)'"
+                        onmouseout="this.style.stroke='var(--tm)'">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                    </svg>
+                    <span id="navUnreadBadge"
+                        style="display:none;position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:.65rem;font-weight:800;padding:2px 6px;border-radius:10px;line-height:1;box-shadow:0 0 10px rgba(255,68,68,.4)">0</span>
+                </div>
+            </div>
+
+            <!-- ▸ INBOX SECTION -->
+            <div class="portal-section" id="sec-inbox">
+                <div class="portal-header">
+                    <h1>Inbox & Notifications</h1>
+                    <p>Manage your booking requests and status updates</p>
+                </div>
+                <div class="portal-content" id="inboxList" style="display:flex;flex-direction:column;gap:16px;">
+                    <!-- Rendered via JS -->
+                </div>
+            </div>
+
+         <!-- ▸ OWNER: Profile Section -->
+<div class="portal-section" id="sec-profile">
+    <div class="portal-header" id="profileUploadHeader">
+        <h1>My Profile</h1>
+        <p>Upload front and back of your Mulkiya — AI will extract and save your details</p>
+    </div>
+
+    <!-- UPLOAD STATE (shown only if no mulkiya saved) -->
+    <div class="portal-content" id="profileUploadState">
+        <div class="profile-card" style="max-width: 760px; margin: 0 auto;">
+            <h3>🪪 Upload Mulkiya (UAE Vehicle License)</h3>
+            <p style="color:var(--tm);margin-bottom:20px;font-size:0.92rem">
+                Upload front and back once. AI will extract all details automatically and save them permanently.
+            </p>
+<div id="mulkiyaUploadZone" class="upload-zone"
+     style="border-style:dashed; height:190px; margin-bottom:20px;cursor:pointer;"
+     onclick="triggerMulkiyaInput()"
+     ondragover="event.preventDefault();this.style.borderColor='var(--c)'"
+     ondragleave="this.style.borderColor=''"
+     ondrop="handleMulkiyaDrop(event)">
+    <div class="uz-ico">🪪</div>
+    <p>Drop Mulkiya images here or click to browse</p>
+    <p style="font-size:0.78rem;color:var(--tm);margin-top:4px">Front + Back recommended for best results</p>
+    <span>JPG · PNG · WEBP</span>
+</div>
+<input type="file" id="mulkiyaInput" accept="image/*" multiple style="display:none"
+       onchange="handleMulkiyaUpload(this.files)">
+            <div id="mulkiyaPreview" style="display:none; margin-top:12px; text-align:center"></div>
+            <button id="btnAutoFill" class="btn btn-primary" style="display:none; width:100%; margin-top:16px;"
+                    onclick="applyMulkiyaData()">
+                ✅ Extract & Save Information
+            </button>
+        </div>
+    </div>
+
+    <!-- PROFILE DISPLAY STATE (shown after mulkiya extracted) -->
+    <div id="profileDisplayState" style="display:none;">
+
+        <!-- Hero Banner -->
+        <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 60%,#0c2340 100%);padding:48px 40px 0;position:relative;overflow:hidden;">
+            <div style="position:absolute;top:0;left:0;right:0;bottom:0;background:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2280%22 cy=%2220%22 r=%2260%22 fill=%22rgba(200,216,228,0.04)%22/><circle cx=%2210%22 cy=%2280%22 r=%2240%22 fill=%22rgba(200,216,228,0.03)%22/></svg>');background-size:cover;pointer-events:none;"></div>
+            <div style="max-width:1100px;margin:0 auto;position:relative;z-index:1;">
+                <div style="display:flex;align-items:flex-end;gap:32px;flex-wrap:wrap;">
+                    <div style="width:90px;height:90px;border-radius:50%;background:linear-gradient(135deg,var(--c),#3b82f6);display:flex;align-items:center;justify-content:center;font-size:2.4rem;border:3px solid rgba(255,255,255,0.15);flex-shrink:0;" id="profileAvatarCircle">👤</div>
+                    <div style="flex:1;min-width:200px;padding-bottom:28px;">
+                        <div style="font-size:0.72rem;letter-spacing:0.15em;text-transform:uppercase;color:rgba(200,216,228,0.6);font-family:'JetBrains Mono',monospace;margin-bottom:6px;">Vehicle Owner · UAE</div>
+                        <div style="font-size:2rem;font-weight:800;color:#fff;line-height:1.1;" id="profileHeroName">—</div>
+                        <div style="font-size:0.85rem;color:rgba(200,216,228,0.7);margin-top:6px;font-family:'JetBrains Mono',monospace;" id="profileHeroMeta">—</div>
+                    </div>
+                    <div style="padding-bottom:28px;">
+                        <button onclick="resetMulkiyaProfile()" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.7);padding:8px 18px;border-radius:8px;font-size:0.78rem;cursor:pointer;font-family:'Syne',sans-serif;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">↺ Re-upload Mulkiya</button>
+                    </div>
+                </div>
+
+                <!-- Stat bar -->
+                <div style="display:flex;gap:0;border-top:1px solid rgba(255,255,255,0.08);margin-top:16px;">
+                    <div style="flex:1;padding:18px 0;text-align:center;border-right:1px solid rgba(255,255,255,0.08);">
+                        <div style="font-size:1.4rem;font-weight:800;color:var(--c);font-family:'JetBrains Mono',monospace;" id="profileStatInspections">0</div>
+                        <div style="font-size:0.7rem;color:rgba(200,216,228,0.5);text-transform:uppercase;letter-spacing:0.1em;margin-top:2px;">Inspections</div>
+                    </div>
+                    <div style="flex:1;padding:18px 0;text-align:center;border-right:1px solid rgba(255,255,255,0.08);">
+                        <div style="font-size:1.4rem;font-weight:800;color:#4ade80;font-family:'JetBrains Mono',monospace;" id="profileStatPassed">0</div>
+                        <div style="font-size:0.7rem;color:rgba(200,216,228,0.5);text-transform:uppercase;letter-spacing:0.1em;margin-top:2px;">Passed Clean</div>
+                    </div>
+                    <div style="flex:1;padding:18px 0;text-align:center;">
+                        <div style="font-size:1.4rem;font-weight:800;color:#f59e0b;font-family:'JetBrains Mono',monospace;" id="profileStatIssues">0</div>
+                        <div style="font-size:0.7rem;color:rgba(200,216,228,0.5);text-transform:uppercase;letter-spacing:0.1em;margin-top:2px;">Need Attention</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cards Grid -->
+        <div style="max-width:1100px;margin:32px auto;padding:0 24px;display:grid;grid-template-columns:1fr 1fr;gap:20px;" id="profileCardsGrid">
+
+            <!-- Owner Info Card -->
+            <div style="background:var(--bg3);border:1px solid var(--border);border-radius:16px;overflow:hidden;">
+                <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:1.1rem;">👤</span>
+                    <span style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--tm);font-family:'JetBrains Mono',monospace;">Owner Information</span>
+                </div>
+                <div style="padding:20px;display:flex;flex-direction:column;gap:12px;" id="profileOwnerFields"></div>
+            </div>
+
+            <!-- Vehicle Info Card -->
+            <div style="background:var(--bg3);border:1px solid var(--border);border-radius:16px;overflow:hidden;">
+                <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:1.1rem;">🚗</span>
+                    <span style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--tm);font-family:'JetBrains Mono',monospace;">Vehicle Information</span>
+                </div>
+                <div style="padding:20px;display:flex;flex-direction:column;gap:12px;" id="profileVehicleFields"></div>
+            </div>
+
+            <!-- Registration Card -->
+            <div style="background:var(--bg3);border:1px solid var(--border);border-radius:16px;overflow:hidden;">
+                <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:1.1rem;">📋</span>
+                    <span style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--tm);font-family:'JetBrains Mono',monospace;">Registration & Insurance</span>
+                </div>
+                <div style="padding:20px;display:flex;flex-direction:column;gap:12px;" id="profileRegFields"></div>
+            </div>
+
+            <!-- Technical Specs Card -->
+            <div style="background:var(--bg3);border:1px solid var(--border);border-radius:16px;overflow:hidden;">
+                <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:1.1rem;">⚙️</span>
+                    <span style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--tm);font-family:'JetBrains Mono',monospace;">Technical Specifications</span>
+                </div>
+                <div style="padding:20px;display:flex;flex-direction:column;gap:12px;" id="profileTechFields"></div>
+            </div>
+
+        </div>
+    </div>
+</div>   <!-- ▸ OWNER: Start Inspection -->
+            <div class="portal-section" id="sec-inspection">
+                <div class="portal-header">
+                    <h1>AI Vehicle Inspection</h1>
+                    <p>Complete the steps below to generate a comprehensive AI diagnostic report</p>
+                </div>
+                <div class="portal-dash-wrap">
+                    <div class="prog-steps">
+                        <div class="pstep active" id="ps1" onclick="setStep(1)">
+                            <div class="ps-num">1</div><span>Vehicle Info</span>
+                        </div>
+                        <div class="pstep" id="ps2" onclick="setStep(2)">
+                            <div class="ps-num">2</div><span>Body Inspection</span>
+                        </div>
+                        <div class="pstep" id="ps3" onclick="setStep(3)">
+                            <div class="ps-num">3</div><span>Engine Audio</span>
+                        </div>
+                        <div class="pstep" id="ps4" onclick="setStep(4)">
+                            <div class="ps-num">4</div><span>Generate Report</span>
+                        </div>
+                    </div>
+
+                    <!-- STEP 1 -->
+                    <div id="step1" class="step-content">
+                        <div class="panel"><div id="step1MulkiyaBanner" style="display:none;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.25);border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:0.85rem;color:#4ade80;font-family:'JetBrains Mono',monospace;">
+    ✓ Vehicle details pre-filled from your saved Mulkiya — <span id="step1OwnerName"></span>
+</div>
+                            <div class="panel-title"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                    <polyline points="14 2 14 8 20 8" />
+                                </svg>Vehicle Information</div>
+                            <div class="form-grid">
+                                <div class="form-group"><label>VIN / Registration</label><input type="text" id="vin"
+                                        placeholder="e.g. 1HGCM82633A004352"></div>
+                                <div class="form-group"><label>Make</label><input type="text" id="make"
+                                        placeholder="e.g. Toyota"></div>
+                                <div class="form-group"><label>Body Type</label><input type="text" id="model"
+                                        placeholder="e.g. Camry">
+                                </div>
+                                <div class="form-group"><label>Year</label><input type="text" id="year"
+                                        placeholder="e.g. 2021"></div>
+                                <div class="form-group"><label>Mileage</label><input type="text" id="mileage"
+                                        placeholder="e.g. 45000 km"></div>
+                                <div class="form-group" id="serviceTypeField" style="display:none">
+                                    <label>Inspection Type</label>
+                                    <select id="inspectionTypeSelect"
+                                        style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                                        <option value="service">Routine Service / Maintenance</option>
+                                        <option value="accident">Accident Repair</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div style="margin-top:24px"><button class="btn btn-primary" onclick="nextStep(2)">Continue
+                                    to Body
+                                    Inspection →</button></div>
+                        </div>
+                    </div>
+
+                    <!-- STEP 2 -->
+                    <div id="step2" class="step-content" style="display:none">
+                        <div class="panel">
+                            <div class="panel-title"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
+                                    <path
+                                        d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2" />
+                                    <circle cx="7" cy="17" r="2" />
+                                    <path d="M9 17h6" />
+                                    <circle cx="17" cy="17" r="2" />
+                                </svg>Body Damage Inspection</div>
+                            <div class="mode-select-grid" style="grid-template-columns:1fr 1fr">
+                                <div class="mode-select-card active" id="mscUpload" onclick="selectMode('upload')">
+                                    <div class="msc-icon">📁</div>
+                                    <h4>Upload Images</h4>
+                                    <p>Upload photos for AI batch analysis</p>
+                                </div>
+                                <div class="mode-select-card" id="mscLive" onclick="goToLiveCamera()">
+                                    <div class="msc-icon">📹</div>
+                                    <h4>Live Camera</h4>
+                                    <p>Real-time webcam detection (iVCam)</p>
+                                </div>
+                            </div>
+                            <div id="modeUpload">
+                                <div class="upload-zone" id="uploadZone"
+                                    onclick="document.getElementById('fileInput').click()"
+                                    ondragover="event.preventDefault();this.classList.add('drag')"
+                                    ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
+                                    <div class="uz-ico"><svg width="40" height="40" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="1.5">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                            <polyline points="17 8 12 3 7 8" />
+                                            <line x1="12" y1="3" x2="12" y2="15" />
+                                        </svg></div>
+                                    <p>Drop vehicle images here or click to browse</p><span>JPG · PNG · WEBP — multiple
+                                        files
+                                        allowed</span>
+                                </div>
+                                <input type="file" id="fileInput" multiple accept="image/*"
+                                    onchange="handleFiles(this.files)">
+                                <div id="imgPreviewGrid" class="img-preview-grid"></div>
+                                <div class="action-row" style="margin-top:20px">
+                                    <button class="btn btn-primary" id="btnAnalyze" onclick="runBatchInspection()"
+                                        style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2.5">
+                                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                                        </svg>Run AI Analysis</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="inlineResults" class="inspection-results-banner">
+                            <div class="res-header">
+                                <div class="res-header-top">
+                                    <div>
+                                        <h2>✅ Inspection Complete!</h2>
+                                        <p>Your vehicle has been analyzed successfully</p>
+                                    </div>
+                                    <div class="res-check-icon"><svg width="24" height="24" viewBox="0 0 24 24"
+                                            fill="none" stroke="#4ade80" stroke-width="2.5">
+                                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                            <polyline points="22 4 12 14.01 9 11.01" />
+                                        </svg></div>
+                                </div>
+                                <div class="res-stats">
+                                    <div class="res-stat-card">
+                                        <div class="res-stat-val" id="resImgCount">—</div>
+                                        <div class="res-stat-lbl">Images Analyzed</div>
+                                    </div>
+                                    <div class="res-stat-card">
+                                        <div class="res-stat-val" id="resDefectCount">—</div>
+                                        <div class="res-stat-lbl">Defects Detected</div>
+                                    </div>
+                                    <div class="res-stat-card">
+                                        <div class="res-stat-val" id="resConfidence">—</div>
+                                        <div class="res-stat-lbl">Avg Confidence</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="panel" style="margin-bottom:16px">
+                                <div
+                                    style="font-size:.875rem;font-weight:700;color:var(--tm);text-transform:uppercase;letter-spacing:.08em;font-family:'JetBrains Mono',monospace;margin-bottom:14px;display:flex;align-items:center;gap:8px">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path
+                                            d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                                        <circle cx="12" cy="13" r="4" />
+                                    </svg>Annotated Images <span
+                                        style="font-size:.72rem;color:var(--td);font-weight:400">(click ✕ to
+                                        exclude from report)</span>
+                                </div>
+                                <div id="resGalleryGrid" class="res-gallery-grid"></div>
+                            </div>
+                            <div class="panel" style="margin-bottom:16px">
+                                <div
+                                    style="font-size:.875rem;font-weight:700;color:var(--tm);text-transform:uppercase;letter-spacing:.08em;font-family:'JetBrains Mono',monospace;margin-bottom:12px">
+                                    Detected Components</div>
+                                <div id="resDefectGrid" class="res-defect-grid"></div>
+                            </div>
+                            <div class="res-cta-banner">
+                                <div class="res-cta-text">
+                                    <h4>Body inspection done — what's next?</h4>
+                                    <p>Add engine audio analysis or go straight to generating your PDF report.</p>
+                                </div>
+                                <div class="res-cta-actions">
+                                    <button class="btn btn-ghost" onclick="startNewInspection()"><svg width="15"
+                                            height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                            stroke-width="2">
+                                            <polyline points="1 4 1 10 7 10" />
+                                            <path d="M3.51 15a9 9 0 1 0 .49-3.5" />
+                                        </svg>New Inspection</button>
+                                    <button class="btn btn-outline" onclick="nextStep(4)">Skip to Report →</button>
+                                    <button class="btn btn-success" onclick="nextStep(3)">Continue to Engine Audio <svg
+                                            width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                            stroke-width="2.5">
+                                            <line x1="5" y1="12" x2="19" y2="12" />
+                                            <polyline points="12 5 19 12 12 19" />
+                                        </svg></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="action-row"><button class="btn btn-ghost" onclick="nextStep(1)">← Back</button>
+                        </div>
+                    </div>
+
+                    <!-- STEP 3 -->
+                    <div id="step3" class="step-content" style="display:none">
+                        <div class="panel" id="audioUploadCard">
+                            <div class="panel-title"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                                </svg>Engine Audio Analysis <span
+                                    style="font-size:.75rem;color:var(--tm);font-weight:400;font-family:'JetBrains Mono',monospace;margin-left:8px">(Optional)</span>
+                            </div>
+                            <p style="color:var(--tm);font-size:.9rem;margin-bottom:20px">Upload or record engine audio.
+                                Our AI will
+                                detect pre-detonation knock signatures with confidence scoring.</p>
+                            <div class="audio-tabs">
+                                <button class="audio-tab active" id="tabUploadAudio"
+                                    onclick="switchAudioMode('upload')">📁 Upload
+                                    File</button>
+                                <button class="audio-tab" id="tabRecordAudio" onclick="switchAudioMode('record')">🎙
+                                    Record
+                                    Live</button>
+                            </div>
+                            <div id="audioModeUpload">
+                                <div class="audio-drop-zone" id="audioDropZone"
+                                    onclick="document.getElementById('audioInput').click()"
+                                    ondragover="event.preventDefault();this.classList.add('drag')"
+                                    ondragleave="this.classList.remove('drag')" ondrop="handleAudioDrop(event)">
+                                    <div class="adz-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="1.5">
+                                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                                            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                            <line x1="12" y1="19" x2="12" y2="23" />
+                                            <line x1="8" y1="23" x2="16" y2="23" />
+                                        </svg></div>
+                                    <div class="adz-text">
+                                        <p>Drop engine audio here or <span style="color:var(--c);font-weight:700">click
+                                                to browse</span></p>
+                                        <span>WAV · MP3 · M4A · FLAC · OGG</span>
+                                    </div>
+                                    <div class="adz-bars">
+                                        <div class="adz-bar" style="height:18%"></div>
+                                        <div class="adz-bar" style="height:40%"></div>
+                                        <div class="adz-bar" style="height:65%"></div>
+                                        <div class="adz-bar" style="height:30%"></div>
+                                        <div class="adz-bar" style="height:80%"></div>
+                                        <div class="adz-bar" style="height:55%"></div>
+                                        <div class="adz-bar" style="height:90%"></div>
+                                        <div class="adz-bar" style="height:45%"></div>
+                                        <div class="adz-bar" style="height:70%"></div>
+                                        <div class="adz-bar" style="height:35%"></div>
+                                        <div class="adz-bar" style="height:85%"></div>
+                                        <div class="adz-bar" style="height:50%"></div>
+                                    </div>
+                                </div>
+                                <input type="file" id="audioInput" accept="audio/*" onchange="handleAudioFile(this)">
+                                <div id="audioFileCard" style="display:none;margin-top:16px">
+                                    <div class="audio-file-card">
+                                        <div class="afc-icon"><svg width="22" height="22" viewBox="0 0 24 24"
+                                                fill="none" stroke="var(--c)" stroke-width="2">
+                                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                                            </svg></div>
+                                        <div class="afc-info">
+                                            <div id="audioFileNameText" class="afc-name"></div>
+                                            <div id="audioFileMeta" class="afc-meta"></div>
+                                        </div>
+                                        <button class="afc-remove" onclick="removeAudioFile()" title="Remove">✕</button>
+                                    </div>
+                                    <div class="audio-player-wrap">
+                                        <div class="apc-label"><svg width="13" height="13" viewBox="0 0 24 24"
+                                                fill="none" stroke="currentColor" stroke-width="2">
+                                                <polygon points="5 3 19 12 5 21 5 3" />
+                                            </svg>Preview Recording</div><audio id="audioPlayerEl" controls
+                                            preload="metadata"
+                                            style="width:100%;margin-top:4px;border-radius:8px;accent-color:var(--c)"></audio>
+                                    </div>
+                                    <div class="action-row" style="margin-top:16px"><button class="btn btn-primary"
+                                            id="btnAnalyzeAudio" onclick="runEngineAnalysis()"><svg width="16"
+                                                height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                stroke-width="2.5">
+                                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                                            </svg>Analyze Engine Audio</button></div>
+                                </div>
+                            </div>
+                            <div id="audioModeRecord" style="display:none">
+                                <div class="live-rec-zone" id="liveRecZone">
+                                    <div id="recIdleState">
+                                        <div style="font-size:3rem;margin-bottom:12px">🎙</div>
+                                        <p style="color:var(--t);font-weight:700;font-size:1rem;margin-bottom:6px">
+                                            Record Engine Audio Live
+                                        </p>
+                                        <p style="color:var(--tm);font-size:.875rem;margin-bottom:20px">Start recording
+                                            and rev your engine
+                                            near the microphone for best results.</p><button class="btn btn-primary"
+                                            onclick="startRecording()"><svg width="16" height="16" viewBox="0 0 24 24"
+                                                fill="none" stroke="currentColor" stroke-width="2.5">
+                                                <circle cx="12" cy="12" r="10" />
+                                                <circle cx="12" cy="12" r="3" fill="currentColor" />
+                                            </svg>Start Recording</button>
+                                    </div>
+                                    <div id="recActiveState" style="display:none">
+                                        <div
+                                            style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px">
+                                            <span class="rec-status-dot"></span><span
+                                                style="font-size:.85rem;font-weight:700;color:var(--red);font-family:'JetBrains Mono',monospace">RECORDING</span>
+                                        </div>
+                                        <div class="rec-timer" id="recTimer">00:00</div>
+                                        <div class="rec-waves" id="recWaves"></div>
+                                        <div class="rec-meter">
+                                            <div class="rec-meter-fill" id="recMeterFill"></div>
+                                        </div>
+                                        <div style="display:flex;gap:12px;justify-content:center;margin-top:16px">
+                                            <button class="btn-danger-live" onclick="stopRecording()">⏹ Stop
+                                                Recording</button><button class="btn btn-ghost"
+                                                onclick="cancelRecording()">✕ Cancel</button></div>
+                                    </div>
+                                </div>
+                                <div id="recordedFileCard" style="display:none;margin-top:16px">
+                                    <div class="audio-file-card">
+                                        <div class="afc-icon"><svg width="22" height="22" viewBox="0 0 24 24"
+                                                fill="none" stroke="var(--green)" stroke-width="2">
+                                                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                                                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                            </svg></div>
+                                        <div class="afc-info">
+                                            <div class="afc-name" id="recordedFileName">engine_recording.wav</div>
+                                            <div class="afc-meta" id="recordedFileMeta"></div>
+                                        </div>
+                                        <button class="afc-remove" onclick="clearRecording()" title="Discard">✕</button>
+                                    </div>
+                                    <div class="audio-player-wrap">
+                                        <div class="apc-label"><svg width="13" height="13" viewBox="0 0 24 24"
+                                                fill="none" stroke="currentColor" stroke-width="2">
+                                                <polygon points="5 3 19 12 5 21 5 3" />
+                                            </svg>Preview Recording</div><audio id="recordedPlayerEl" controls
+                                            preload="metadata"
+                                            style="width:100%;margin-top:4px;border-radius:8px;accent-color:var(--c)"></audio>
+                                    </div>
+                                    <div class="action-row" style="margin-top:16px"><button class="btn btn-primary"
+                                            id="btnAnalyzeRecording" onclick="analyzeRecordedAudio()"><svg width="16"
+                                                height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                stroke-width="2.5">
+                                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                                            </svg>Analyze Recording</button><button class="btn btn-ghost"
+                                            onclick="clearRecording()">Record
+                                            Again</button></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="audioAnalysisLoader" style="display:none">
+                            <div class="audio-loader-card">
+                                <div class="alc-header">
+                                    <div class="alc-icon-ring"><svg width="28" height="28" viewBox="0 0 24 24"
+                                            fill="none" stroke="var(--c)" stroke-width="1.8">
+                                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                                        </svg></div>
+                                    <div>
+                                        <div class="alc-title">Analyzing Engine Audio</div>
+                                        <div class="alc-sub" id="alc-file-name">Processing...</div>
+                                    </div>
+                                </div>
+                                <div class="alc-wave-wrap"><canvas id="alcWaveCanvas" class="alc-wave-canvas"></canvas>
+                                    <div class="alc-scan-line"></div>
+                                </div>
+                                <div class="alc-steps">
+                                    <div class="alc-step" id="alcStep0">
+                                        <div class="alc-step-dot"></div><span>Loading audio data</span>
+                                    </div>
+                                    <div class="alc-step" id="alcStep1">
+                                        <div class="alc-step-dot"></div><span>Extracting frequency features</span>
+                                    </div>
+                                    <div class="alc-step" id="alcStep2">
+                                        <div class="alc-step-dot"></div><span>Running AST model inference</span>
+                                    </div>
+                                    <div class="alc-step" id="alcStep3">
+                                        <div class="alc-step-dot"></div><span>Scoring knock probability</span>
+                                    </div>
+                                    <div class="alc-step" id="alcStep4">
+                                        <div class="alc-step-dot"></div><span>Generating verdict</span>
+                                    </div>
+                                </div>
+                                <div class="alc-progress-wrap">
+                                    <div class="alc-progress-track">
+                                        <div class="alc-progress-fill" id="alcProgressFill"></div>
+                                    </div>
+                                    <div class="alc-progress-pct" id="alcProgressPct">0%</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="audioResult" style="display:none"></div>
+                        <div class="action-row" style="margin-top:4px">
+                            <button class="btn btn-ghost" onclick="nextStep(2)">← Back to Body Inspection</button>
+                            <button class="btn btn-primary" onclick="nextStep(4)">Continue to Report →</button>
+                        </div>
+                    </div>
+
+                    <!-- STEP 4 -->
+                    <div id="step4" class="step-content" style="display:none">
+                        <div class="panel">
+                            <div class="panel-title"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                    <polyline points="14 2 14 8 20 8" />
+                                </svg>Generate Inspection Report</div>
+                            <div id="preSummary" style="margin-bottom:24px">
+                                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px"
+                                    id="summaryCards"></div>
+                                <p style="color:var(--tm);font-size:.9rem">Review the summary above and choose your PDF
+                                    option before
+                                    generating.</p>
+                            </div>
+                            <div class="pdf-choice-box">
+                                <h4><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                        <polyline points="14 2 14 8 20 8" />
+                                    </svg>PDF Report Options</h4>
+                                <div class="pdf-choice-toggle"><button class="pdf-choice-opt" id="pdfOptDownload"
+                                        onclick="setPdfOption('download')">📥 Download Only</button><button
+                                        class="pdf-choice-opt active" id="pdfOptPreview"
+                                        onclick="setPdfOption('preview')">👁 Preview in Browser</button></div>
+                            </div>
+                            <div class="action-row">
+                                <button class="btn btn-ghost" onclick="nextStep(3)">← Back</button>
+                                <button class="btn btn-primary" id="btnGenerate" onclick="generateReport()"><svg
+                                        width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2.5">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                        <polyline points="14 2 14 8 20 8" />
+                                    </svg>Generate PDF Report</button>
+                                <div id="generateLoading"
+                                    style="display:none;align-items:center;gap:10px;color:var(--tm);font-size:.875rem">
+                                    <div class="spinner spinner-light"></div> Generating report + AI analysis...
+                                </div>
+                            </div>
+                        </div>
+                        <div id="aiAnalysisPanel" style="display:none"></div>
+                        <div id="resultsArea" style="display:none"></div>
+                        <div id="pdfViewerSection" class="panel" style="display:none;margin-top:24px">
+                            <div
+                                style="font-size:1rem;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:10px;color:var(--t)">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--c)"
+                                    stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                    <polyline points="14 2 14 8 20 8" />
+                                </svg>📄 Inspection Report
+                            </div>
+                            <iframe id="pdfViewerFrame" title="PDF Report Preview"></iframe>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ▸ OWNER: History -->
+            <div class="portal-section" id="sec-portalHistory">
+                <div class="portal-header">
+                    <h1>Inspection History</h1>
+                    <p>All your previous vehicle inspections</p>
+                </div>
+                <div class="portal-content">
+                    <div id="portalHistoryList">
+                        <div
+                            style="text-align:center;padding:60px 20px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.85rem">
+                            <div style="font-size:2.5rem;margin-bottom:12px">🔍</div>No inspections yet — start your
+                            first inspection
+                            to see history here.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ▸ OWNER: Book Garage -->
+            <div class="portal-section" id="sec-bookGarage">
+                <div class="portal-header">
+                    <h1>Book a Garage</h1>
+                    <p>Find nearby service centres and book an appointment</p>
+                </div>
+                <div class="portal-content">
+                    <div style="display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
+                        <button class="btn btn-primary" onclick="enableLocation()">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                                <circle cx="12" cy="10" r="3" />
+                            </svg>
+                            Enable Location
+                        </button>
+                        <span style="color:var(--tm);font-size:.82rem;font-family:'JetBrains Mono',monospace"
+                            id="locationStatus">Location not enabled</span>
+                    </div>
+                    <div class="garage-map-wrap" id="garageMapWrap">
+                        <div class="garage-map-placeholder" id="garageMapPlaceholder">
+                            <div style="font-size:2.5rem">🗺️</div>
+                            <p>Enable location to see nearby garages on the map</p>
+                        </div>
+                        <iframe id="garageMapFrame" style="display:none;width:100%;height:100%;border:none"
+                            title="Nearby Garages Map"></iframe>
+                    </div>
+                    <div
+                        style="display:flex;align-items:center;justify-content:space-between;margin:0 0 16px;flex-wrap:wrap;gap:8px">
+                        <h3
+                            style="font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:var(--t);margin:0">
+                            Nearby
+                            Garages</h3>
+                        <span id="garageCountLabel"
+                            style="font-size:.78rem;color:var(--tm);font-family:'JetBrains Mono',monospace"></span>
+                    </div>
+                    <div id="garageLoadingState"
+                        style="display:none;text-align:center;padding:30px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.85rem">
+                        <div class="spinner" style="margin:0 auto 12px"></div>Searching for nearby garages...
+                    </div>
+                    <div class="garage-cards-grid" id="garageCardsGrid"></div>
+                </div>
+            </div>
+
+            <!-- ▸ OWNER: Car Life Report -->
+            <div class="portal-section" id="sec-carLife">
+                <div class="portal-header">
+                    <h1>Car Life Report</h1>
+                    <p>Complete vehicle history — accidents, services, repairs</p>
+                </div>
+                <div class="portal-content">
+                    <div style="display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start"
+                        id="carLifeLayout">
+                        <div>
+                            <div class="groq-summary-box" id="carLifeGroqSummary">
+                                <div class="groq-summary-label"><svg width="12" height="12" viewBox="0 0 24 24"
+                                        fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10" />
+                                    </svg>✦ Groq AI Summary</div>
+                                <div class="groq-summary-text" id="carLifeSummaryText">Generate your car life report to
+                                    see an
+                                    AI-powered summary of your vehicle's full history.</div>
+                            </div>
+                            <div
+                                style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+                                <h3
+                                    style="font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:var(--t);margin:0">
+                                    Timeline</h3>
+                                <button class="btn btn-primary" style="padding:8px 18px;font-size:.8rem"
+                                    onclick="generateCarLifeReport()">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2.5">
+                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                                    </svg>Generate with Groq AI
+                                </button>
+                            </div>
+                            <div class="car-life-timeline" id="carLifeTimeline">
+                                <div
+                                    style="text-align:center;padding:40px 20px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.82rem">
+                                    No events yet — inspections and garage visits will appear here.</div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="car-life-qr-section">
+                                <div
+                                    style="font-family:'JetBrains Mono',monospace;font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:var(--tm);margin-bottom:8px">
+                                    Car Life QR Code</div>
+                                <div class="car-life-qr-box" id="carLifeQrBox">
+                                    <div class="qr-placeholder">
+                                        <div style="font-size:1.5rem">⬡</div>
+                                        <p>Generate report to get QR code</p>
+                                    </div>
+                                </div>
+                                <p
+                                    style="font-size:.78rem;color:var(--tm);margin:0;max-width:220px;text-align:center;line-height:1.5">
+                                    Scan to open the full PDF Car Life Report on any device</p>
+                                <button class="btn btn-outline" id="btnDownloadCarLife"
+                                    style="display:none;margin-top:4px" onclick="downloadCarLifeReport()">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <polyline points="7 10 12 15 17 10" />
+                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                    </svg>Download PDF
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ▸ GARAGE: Profile -->
+<div class="portal-section" id="sec-garageProfile">
+    <div class="portal-header">
+        <h1>Garage Profile</h1>
+        <p>Manage your service centre information</p>
+    </div>
+    <div class="portal-content">
+        <!-- Rich hero card will be inserted here automatically by renderGarageProfileCard() -->
+        
+        <div class="profile-card" style="max-width:600px">
+            <h3><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            </svg>Garage Information</h3>
+            
+            <div class="profile-form-row">
+                <div class="profile-form-group"><label>Garage Name</label><input type="text" id="garageName" placeholder="AutoFix Pro"></div>
+                <div class="profile-form-group"><label>Phone</label><input type="text" id="garagePhone" placeholder="+971 XX XXX XXXX"></div>
+            </div>
+            <div class="profile-form-group" style="margin-bottom:14px"><label>Address</label><input type="text" id="garageAddress" placeholder="123 Sheikh Zayed Road, Dubai"></div>
+            <div class="profile-form-row">
+                <div class="profile-form-group"><label>City</label><input type="text" id="garageCity" placeholder="Dubai"></div>
+                <div class="profile-form-group"><label>License No.</label><input type="text" id="garageLicense" placeholder="GRG-XXXX"></div>
+            </div>
+            
+            <button class="btn btn-primary" style="margin-top:6px" onclick="saveGarageProfile()">Save Garage Profile</button>
+            
+            <p style="font-size:.78rem;color:var(--tm);margin-top:12px;line-height:1.5">
+                💡 Bookings from vehicle owners will appear under <strong>My Appointments</strong> when their booking matches your garage name and city.
+            </p>
+        </div>
+
+        <!-- Stats row (kept for backward compatibility, though hero now shows stats) -->
+        <div class="portal-stats-row" style="margin-top:24px">
+            <div class="pstat-card">
+                <div class="pstat-icon" style="background:rgba(200,216,228,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--c)" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                </svg></div>
+                <div>
+                    <div class="pstat-val" id="garageStatInspections">0</div>
+                    <div class="pstat-lbl">Inspections Done</div>
+                </div>
+            </div>
+            <div class="pstat-card">
+                <div class="pstat-icon" style="background:rgba(245,158,11,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                </svg></div>
+                <div>
+                    <div class="pstat-val" id="garageStatAppointments">0</div>
+                    <div class="pstat-lbl">Appointments</div>
+                </div>
+            </div>
+            <div class="pstat-card">
+                <div class="pstat-icon" style="background:rgba(74,222,128,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                </svg></div>
+                <div>
+                    <div class="pstat-val" id="garageStatCompleted">0</div>
+                    <div class="pstat-lbl">Completed</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+            <!-- ▸ GARAGE: Service Inspection -->
+            <div class="portal-section" id="sec-serviceInspection">
+                <div class="portal-header">
+                    <h1>Start Service Inspection</h1>
+                    <p>Run a full AI inspection for a customer vehicle</p>
+                </div>
+                <div class="portal-dash-wrap" style="padding-top:0">
+                    <div class="panel" style="margin-bottom:24px">
+                        <div class="panel-title"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3" />
+                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                            </svg>Inspection Type</div>
+                        <div class="service-type-row">
+                            <div class="service-type-card active" id="stcService"
+                                onclick="selectServiceType('service')">
+                                <div class="stc-icon">🔧</div>
+                                <div class="stc-label">Routine Service</div>
+                                <div class="stc-desc">Oil change, brakes, filters, general maintenance</div>
+                            </div>
+                            <div class="service-type-card" id="stcAccident" onclick="selectServiceType('accident')">
+                                <div class="stc-icon">🚨</div>
+                                <div class="stc-label">Accident Repair</div>
+                                <div class="stc-desc">Collision damage, insurance claim inspection</div>
+                            </div>
+                        </div>
+                        <div class="form-grid" style="margin-top:0">
+                            <div class="form-group"><label>Customer VIN / Registration</label><input type="text"
+                                    id="gVin" placeholder="1HGCM82633A004352"
+                                    oninput="syncInspectionField('vin', this.value)"></div>
+                            <div class="form-group"><label>Make</label><input type="text" id="gMake"
+                                    placeholder="Toyota" oninput="syncInspectionField('make', this.value)"></div>
+                            <div class="form-group"><label>Body Type</label><input type="text" id="gBodyType"
+                                    placeholder="Camry" oninput="syncInspectionField('bodyType', this.value)"></div>
+                            <div class="form-group"><label>Year</label><input type="text" id="gYear" placeholder="2021"
+                                    oninput="syncInspectionField('year', this.value)"></div>
+                        </div>
+                        <button class="btn btn-primary" style="margin-top:8px" onclick="startGarageInspectionFlow()">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5">
+                                <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>Proceed to AI Inspection
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ▸ GARAGE: My Inspections -->
+            <div class="portal-section" id="sec-myInspections">
+                <div class="portal-header">
+                    <h1>My Inspections</h1>
+                    <p>History of all customer inspections performed</p>
+                </div>
+                <div class="portal-content">
+                    <div id="garageInspectionList">
+                        <div
+                            style="text-align:center;padding:60px 20px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.85rem">
+                            <div style="font-size:2.5rem;margin-bottom:12px">🔧</div>No inspections yet — complete a
+                            service
+                            inspection to see records here.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ▸ GARAGE: My Appointments -->
+            <div class="portal-section" id="sec-appointments">
+                <div class="portal-header">
+                    <h1>My Appointments</h1>
+                    <p>Booking requests from vehicle owners</p>
+                </div>
+                <div class="portal-content">
+                    <div id="garageAppointmentsNoProfile"
+                        style="display:none;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:12px;padding:16px 20px;margin-bottom:20px;font-size:.875rem;color:var(--t)">
+                        ⚠️ Complete your <strong>Garage Profile</strong> (name + city) to see matching appointments
+                        here.
+                    </div>
+                    <!-- Insurance-Authorized Jobs Banner -->
+                    <div id="insuranceAuthorizedBanner" style="display:none;background:rgba(74,222,128,0.06);border:1px solid rgba(74,222,128,0.25);border-radius:14px;padding:18px 20px;margin-bottom:24px;">
+                        <div style="font-weight:800;color:#4ade80;font-size:1rem;margin-bottom:12px;">🛡️ Insurance-Authorized Jobs</div>
+                        <p style="font-size:0.82rem;color:var(--tm);margin-bottom:14px;font-family:'JetBrains Mono',monospace;">These repair jobs have been approved by insurance — you may proceed with repairs.</p>
+                        <div id="insuranceAuthorizedList" style="display:flex;flex-direction:column;gap:10px;"></div>
+                    </div>
+                    <div class="garage-appointments-grid" id="garageAppointmentsList">
+                        <div
+                            style="text-align:center;padding:60px 20px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.85rem">
+                            <div style="font-size:2.5rem;margin-bottom:12px">📅</div>No appointments yet.
+                        </div>
+                    </div>
+                </div>
+            </div>
+<!-- INSURANCE: Profile -->
+<div class="portal-section" id="sec-insProfile">
+    <div class="portal-header">
+        <h1>Insurance Company Profile</h1>
+        <p>Manage your company information</p>
+    </div>
+    <div class="portal-content">
+        <div class="profile-card" style="max-width:600px">
+            <h3>🛡️ Company Information</h3>
+            <div class="profile-form-group" style="margin-bottom:14px">
+                <label>Company Name</label>
+                <input type="text" id="insCompanyName" placeholder="Al Wathba Insurance">
+            </div>
+            <div class="profile-form-row">
+                <div class="profile-form-group">
+                    <label>License No.</label>
+                    <input type="text" id="insLicense" placeholder="INS-XXXX">
+                </div>
+                <div class="profile-form-group">
+                    <label>Phone</label>
+                    <input type="text" id="insPhone" placeholder="+971 4 XXX XXXX">
+                </div>
+            </div>
+            <div class="profile-form-group" style="margin-bottom:14px">
+                <label>City</label>
+                <input type="text" id="insCity" placeholder="Dubai">
+            </div>
+            <button class="btn btn-primary" onclick="saveInsuranceProfile()">Save Profile</button>
+        </div>
+    </div>
+</div>
+
+<!-- INSURANCE: Incoming Claims -->
+<div class="portal-section" id="sec-insClaims">
+    <div class="portal-header">
+        <h1>Incoming Claims</h1>
+        <p>Review and authorize accident repair claims</p>
+    </div>
+    <div class="portal-content" id="insClaimsList"></div>
+</div>
+
+<!-- INSURANCE: History -->
+<div class="portal-section" id="sec-insHistory">
+    <div class="portal-header">
+        <h1>Claims History</h1>
+        <p>All processed insurance claims</p>
+    </div>
+    <div class="portal-content" id="insHistoryList"></div>
+</div>
+
+<!-- INSURANCE: Policy Holders -->
+<div class="portal-section" id="sec-insPolicyHolders">
+    <div class="portal-header">
+        <h1>Policy Holders</h1>
+        <p>Vehicles with active insurance policies registered in MEHRA</p>
+    </div>
+    <div class="portal-content" id="insPolicyHoldersList">
+        <div style="text-align:center;padding:60px 20px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.85rem">
+            <div style="font-size:2.5rem;margin-bottom:12px">🛡️</div>Loading policy holders...
+        </div>
+    </div>
+</div>
+
+            <!-- ▸ OWNER: Registration Renewal -->
+            <div class="portal-section" id="sec-renewal">
+                <div class="portal-header">
+                    <h1>Registration Renewal</h1>
+                    <p>Check your vehicle status and book a Tasjeel renewal inspection</p>
+                </div>
+                <div class="portal-content">
+                    <div class="portal-stats-row" style="margin-bottom:24px">
+                        <div class="pstat-card">
+                            <div class="pstat-icon" style="background:rgba(200,216,228,.08)">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--c)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                            </div>
+                            <div>
+                                <div class="pstat-val" id="renewalRegExpiry">—</div>
+                                <div class="pstat-lbl">Registration Expiry</div>
+                            </div>
+                        </div>
+                        <div class="pstat-card">
+                            <div class="pstat-icon" style="background:rgba(245,158,11,.08)">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            </div>
+                            <div>
+                                <div class="pstat-val" id="renewalInsExpiry">—</div>
+                                <div class="pstat-lbl">Insurance Expiry</div>
+                            </div>
+                        </div>
+                        <div class="pstat-card">
+                            <div class="pstat-icon" style="background:rgba(255,68,68,.08)">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            </div>
+                            <div>
+                                <div class="pstat-val" id="renewalFinesCount">—</div>
+                                <div class="pstat-lbl">Outstanding Fines</div>
+                            </div>
+                        </div>
+                        <div class="pstat-card">
+                            <div class="pstat-icon" style="background:rgba(74,222,128,.08)">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            </div>
+                            <div>
+                                <div class="pstat-val" id="renewalReadyStatus">—</div>
+                                <div class="pstat-lbl">Renewal Eligibility</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-card" style="max-width:680px;margin-bottom:24px">
+                        <h3 style="margin-bottom:16px">Renewal Checklist</h3>
+                        <div id="renewalChecklist" style="display:flex;flex-direction:column;gap:12px">
+                            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid var(--border)">
+                                <div id="rcheck-reg-icon" style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(245,158,11,.1);color:#f59e0b;font-weight:700;font-size:.8rem;flex-shrink:0">?</div>
+                                <div style="flex:1"><div style="font-weight:700;font-size:.9rem;color:var(--t)">Registration Status</div><div id="rcheck-reg-sub" style="font-size:.78rem;color:var(--tm);margin-top:2px;font-family:'JetBrains Mono',monospace">Loading...</div></div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid var(--border)">
+                                <div id="rcheck-ins-icon" style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(245,158,11,.1);color:#f59e0b;font-weight:700;font-size:.8rem;flex-shrink:0">?</div>
+                                <div style="flex:1"><div style="font-weight:700;font-size:.9rem;color:var(--t)">Insurance Status</div><div id="rcheck-ins-sub" style="font-size:.78rem;color:var(--tm);margin-top:2px;font-family:'JetBrains Mono',monospace">Loading...</div></div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid var(--border)">
+                                <div id="rcheck-fines-icon" style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(245,158,11,.1);color:#f59e0b;font-weight:700;font-size:.8rem;flex-shrink:0">?</div>
+                                <div style="flex:1"><div style="font-weight:700;font-size:.9rem;color:var(--t)">Outstanding Fines</div><div id="rcheck-fines-sub" style="font-size:.78rem;color:var(--tm);margin-top:2px;font-family:'JetBrains Mono',monospace">Loading...</div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-card" style="max-width:680px">
+                        <h3 style="margin-bottom:6px">Book Tasjeel Inspection Slot</h3>
+                        <p style="color:var(--tm);font-size:.85rem;margin-bottom:18px">Select a centre and date for your renewal inspection</p>
+                        <div id="renewalBlockedBanner" style="display:none;background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.25);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.85rem;color:var(--red)">
+                            ⚠️ Renewal blocked — resolve outstanding issues first.
+                        </div>
+                        <div class="profile-form-row">
+                            <div class="profile-form-group">
+                                <label>Inspection Centre</label>
+                                <select id="renewalCentre" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                                    <option value="">Select Tasjeel centre...</option>
+                                    <option value="tasjeel-al-quoz">Tasjeel Al Quoz, Dubai</option>
+                                    <option value="tasjeel-deira">Tasjeel Deira, Dubai</option>
+                                    <option value="tasjeel-sharjah">Tasjeel Sharjah</option>
+                                    <option value="tasjeel-ajman">Tasjeel Ajman</option>
+                                    <option value="wasel-abu-dhabi">Wasel Abu Dhabi</option>
+                                </select>
+                            </div>
+                            <div class="profile-form-group">
+                                <label>Preferred Date</label>
+                                <input type="date" id="renewalDate" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                            </div>
+                        </div>
+                        <div class="profile-form-group" style="margin-bottom:18px">
+                            <label>Preferred Time Slot</label>
+                            <select id="renewalTime" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                                <option value="08:00">08:00 AM</option>
+                                <option value="09:00">09:00 AM</option>
+                                <option value="10:00">10:00 AM</option>
+                                <option value="11:00">11:00 AM</option>
+                                <option value="13:00">01:00 PM</option>
+                                <option value="14:00">02:00 PM</option>
+                                <option value="15:00">03:00 PM</option>
+                                <option value="16:00">04:00 PM</option>
+                            </select>
+                        </div>
+                        <div id="renewalSelfReport" style="display:none;background:rgba(200,216,228,.04);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:16px;">
+                            <div style="font-weight:700;color:var(--t);margin-bottom:10px;">📋 Appointment Completed — Report Result</div>
+                            <p style="font-size:0.82rem;color:var(--tm);margin-bottom:14px;font-family:'JetBrains Mono',monospace;">Your inspection appointment date has passed. Please self-report the outcome until official Tasjeel integration is available.</p>
+                            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                                <button onclick="markRenewalResult('passed')" style="padding:9px 20px;background:rgba(74,222,128,0.1);color:#4ade80;border:1px solid rgba(74,222,128,0.3);border-radius:8px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;">✅ Mark as Passed</button>
+                                <button onclick="markRenewalResult('failed')" style="padding:9px 20px;background:rgba(255,68,68,0.08);color:#ff6666;border:1px solid rgba(255,68,68,0.25);border-radius:8px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;">❌ Mark as Failed</button>
+                            </div>
+                        </div>
+                        <div id="renewalConfirmed" style="display:none;background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25);border-radius:12px;padding:16px 20px;margin-bottom:16px">
+                            <div style="font-weight:700;color:#4ade80;margin-bottom:6px">✅ Inspection Slot Booked!</div>
+                            <div id="renewalConfirmedDetails" style="font-size:.85rem;color:var(--tm);font-family:'JetBrains Mono',monospace"></div>
+                        </div>
+                        <button class="btn btn-primary" id="btnBookRenewal" onclick="bookRenewalSlot()">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                            Confirm Booking
+                        </button>
+                    </div>
+
+                    <div style="margin-top:24px">
+                        <h3 style="font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:var(--t);margin-bottom:16px">Renewal Booking History</h3>
+                        <div id="renewalHistoryList">
+                            <div style="text-align:center;padding:40px 20px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.82rem">No renewal records yet.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ▸ OWNER: Marketplace / Verified History -->
+            <div class="portal-section" id="sec-marketplace">
+                <div class="portal-header">
+                    <h1>Marketplace</h1>
+                    <p>Verified vehicle history for buyers — trustworthy and shareable</p>
+                </div>
+                <div class="portal-content">
+                    <div class="profile-card" style="max-width:800px;margin-bottom:28px">
+                        <h3 style="margin-bottom:6px">Your Verified Listing</h3>
+                        <p style="color:var(--tm);font-size:.85rem;margin-bottom:18px">Generate a shareable verified car history report for potential buyers.</p>
+                        <div id="mpVehicleDisplay" style="background:rgba(200,216,228,.04);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:18px;font-size:.85rem;color:var(--tm);font-family:'JetBrains Mono',monospace">No vehicle data — upload Mulkiya in My Profile first.</div>
+                        <div class="profile-form-row" style="margin-bottom:16px">
+                            <div class="profile-form-group">
+                                <label>Asking Price (AED)</label>
+                                <input type="number" id="mpPrice" placeholder="85000" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                            </div>
+                            <div class="profile-form-group">
+                                <label>Seller Contact</label>
+                                <input type="text" id="mpContact" placeholder="+971 XX XXX XXXX" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                            </div>
+                        </div>
+                        <div class="profile-form-group" style="margin-bottom:18px">
+                            <label>Additional Notes</label>
+                            <textarea id="mpNotes" rows="3" placeholder="Full service history, single owner, no accidents..." style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%;resize:vertical"></textarea>
+                        </div>
+                        <div style="display:flex;gap:12px;flex-wrap:wrap">
+                            <button class="btn btn-primary" onclick="publishMarketplaceListing()">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                Publish Verified Listing
+                            </button>
+                            <button class="btn btn-ghost" onclick="generateMarketplaceReport()">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                Download Buyer Report
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+                            <h3 style="font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:var(--t);margin:0">Verified Listings</h3>
+                            <input type="text" id="mpSearch" placeholder="Search by make, model..." oninput="filterMarketplace(this.value)" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.85rem;outline:none;width:220px">
+                        </div>
+                        <div class="garage-cards-grid" id="marketplaceGrid">
+                            <div style="text-align:center;padding:60px 20px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.85rem;grid-column:1/-1">
+                                <div style="font-size:2.5rem;margin-bottom:12px">🛒</div>No verified listings yet — be the first to publish!
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+<!-- ▸ RTA: Dashboard -->
+<div class="portal-section" id="sec-rtaDashboard">
+    <div class="portal-header">
+        <h1>RTA Authority Dashboard</h1>
+        <p>Roads &amp; Transport Authority — unified vehicle ecosystem oversight</p>
+    </div>
+    <div class="portal-content">
+        <div class="portal-stats-row" style="margin-bottom:24px" id="rtaStatsRow">
+            <div class="pstat-card">
+                <div class="pstat-icon" style="background:rgba(200,216,228,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--c)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+                <div><div class="pstat-val" id="rtaStatFines">—</div><div class="pstat-lbl">Total Active Fines</div></div>
+            </div>
+            <div class="pstat-card">
+                <div class="pstat-icon" style="background:rgba(74,222,128,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+                <div><div class="pstat-val" id="rtaStatRegistrations">—</div><div class="pstat-lbl">Registered Vehicles</div></div>
+            </div>
+            <div class="pstat-card">
+                <div class="pstat-icon" style="background:rgba(245,158,11,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+                <div><div class="pstat-val" id="rtaStatRenewals">—</div><div class="pstat-lbl">Pending Renewals</div></div>
+            </div>
+            <div class="pstat-card">
+                <div class="pstat-icon" style="background:rgba(255,68,68,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+                <div><div class="pstat-val" id="rtaStatInspections">—</div><div class="pstat-lbl">AI Inspections Today</div></div>
+            </div>
+        </div>
+        <div class="profile-card" style="max-width:900px;margin-bottom:24px">
+            <h3 style="margin-bottom:16px">🏛️ RTA Officer Profile</h3>
+            <div class="profile-form-row">
+                <div class="profile-form-group"><label>Officer Name</label><input type="text" id="rtaOfficerName" placeholder="Ahmed Al Mansoori"></div>
+                <div class="profile-form-group"><label>Department</label><input type="text" id="rtaDept" placeholder="Traffic Management"></div>
+                <div class="profile-form-group"><label>Badge No.</label><input type="text" id="rtaBadge" placeholder="RTA-XXXX"></div>
+            </div>
+            <button class="btn btn-primary" onclick="saveRtaProfile()">Save Profile</button>
+        </div>
+        <div class="profile-card" style="max-width:900px">
+            <h3 style="margin-bottom:16px">📊 System Activity — Recent Registrations</h3>
+            <div id="rtaRecentActivity"><div style="text-align:center;padding:40px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.85rem"><div style="font-size:2rem;margin-bottom:12px">🏛️</div>Loading activity...</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- ▸ RTA: Traffic Fines -->
+<div class="portal-section" id="sec-rtaFines">
+    <div class="portal-header"><h1>Traffic Fines Management</h1><p>Review, issue, and process traffic violation fines</p></div>
+    <div class="portal-content">
+        <div class="profile-card" style="max-width:900px;margin-bottom:24px">
+            <h3 style="margin-bottom:16px">Issue New Fine</h3>
+            <div class="profile-form-row">
+                <div class="profile-form-group"><label>Plate Number</label><input type="text" id="finesPlate" placeholder="A 12345 Dubai"></div>
+                <div class="profile-form-group"><label>Violation Type</label>
+                    <select id="finesViolationType" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                        <option value="">Select violation...</option>
+                        <option value="speeding">Speeding</option>
+                        <option value="redlight">Red Light</option>
+                        <option value="parking">Illegal Parking</option>
+                        <option value="expired">Expired Registration</option>
+                        <option value="noinsurance">No Valid Insurance</option>
+                        <option value="phone">Mobile Phone Use</option>
+                        <option value="seatbelt">No Seatbelt</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="profile-form-group"><label>Fine Amount (AED)</label><input type="number" id="finesAmount" placeholder="500"></div>
+            </div>
+            <div class="profile-form-group" style="margin-bottom:16px"><label>Location / Notes</label><input type="text" id="finesLocation" placeholder="Sheikh Zayed Rd, Dubai — km 24"></div>
+            <button class="btn btn-primary" onclick="issueRtaFine()">Issue Fine</button>
+        </div>
+        <div class="profile-card" style="max-width:900px">
+            <h3 style="margin-bottom:16px">Active Fines Registry</h3>
+            <div id="rtaFinesList"><div style="text-align:center;padding:40px;color:var(--tm)"><div style="font-size:2rem;margin-bottom:12px">⚠️</div>No fines issued yet.</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- ▸ RTA: Registrations -->
+<div class="portal-section" id="sec-rtaRegistrations">
+    <div class="portal-header"><h1>Vehicle Registrations</h1><p>All MEHRA-registered vehicles and their status</p></div>
+    <div class="portal-content"><div class="profile-card" style="max-width:900px"><div id="rtaRegistrationsList"><div style="text-align:center;padding:60px;color:var(--tm)"><div style="font-size:2rem;margin-bottom:12px">🚗</div>Loading registrations...</div></div></div></div>
+</div>
+
+<!-- ▸ RTA: Fleet Overview -->
+<div class="portal-section" id="sec-rtaFleet">
+    <div class="portal-header"><h1>Fleet Overview</h1><p>Aggregate vehicle data across the UAE</p></div>
+    <div class="portal-content"><div class="profile-card" style="max-width:900px"><div id="rtaFleetStats"><div style="text-align:center;padding:60px;color:var(--tm)"><div style="font-size:2rem;margin-bottom:12px">🚌</div>Loading fleet data...</div></div></div></div>
+</div>
+
+<!-- ▸ RTA: Analytics -->
+<div class="portal-section" id="sec-rtaAnalytics">
+    <div class="portal-header"><h1>Traffic Analytics</h1><p>System-wide statistics and insights</p></div>
+    <div class="portal-content"><div class="profile-card" style="max-width:900px"><div id="rtaAnalyticsPanel"><div style="text-align:center;padding:60px;color:var(--tm)"><div style="font-size:2rem;margin-bottom:12px">📊</div>Loading analytics...</div></div></div></div>
+</div>
+
+<!-- ▸ TASJEEL: Dashboard -->
+<div class="portal-section" id="sec-tasjeelDashboard">
+    <div class="portal-header"><h1>Tasjeel Centre Dashboard</h1><p>Vehicle inspection and registration renewal management</p></div>
+    <div class="portal-content">
+        <div class="portal-stats-row" style="margin-bottom:24px">
+            <div class="pstat-card"><div class="pstat-icon" style="background:rgba(200,216,228,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--c)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div><div class="pstat-val" id="tasjeelStatToday">—</div><div class="pstat-lbl">Bookings Today</div></div></div>
+            <div class="pstat-card"><div class="pstat-icon" style="background:rgba(74,222,128,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div><div><div class="pstat-val" id="tasjeelStatPassed">—</div><div class="pstat-lbl">Passed This Week</div></div></div>
+            <div class="pstat-card"><div class="pstat-icon" style="background:rgba(255,68,68,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div><div><div class="pstat-val" id="tasjeelStatFailed">—</div><div class="pstat-lbl">Failed / Rejected</div></div></div>
+            <div class="pstat-card"><div class="pstat-icon" style="background:rgba(245,158,11,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 8 12 12 14 14"/></svg></div><div><div class="pstat-val" id="tasjeelStatPending">—</div><div class="pstat-lbl">Pending / Upcoming</div></div></div>
+        </div>
+        <div class="profile-card" style="max-width:700px;margin-bottom:24px">
+            <h3 style="margin-bottom:16px">🔍 Centre Profile</h3>
+            <div class="profile-form-row">
+                <div class="profile-form-group"><label>Centre Name</label><input type="text" id="tasjeelCentreName" placeholder="Tasjeel Al Quoz"></div>
+                <div class="profile-form-group"><label>Location</label><input type="text" id="tasjeelLocation" placeholder="Al Quoz, Dubai"></div>
+                <div class="profile-form-group"><label>Licence No.</label><input type="text" id="tasjeelLicense" placeholder="TSJ-XXXX"></div>
+            </div>
+            <button class="btn btn-primary" onclick="saveTasjeelProfile()">Save Profile</button>
+        </div>
+        <div class="profile-card" style="max-width:900px"><h3 style="margin-bottom:16px">📅 Today's Bookings Queue</h3><div id="tasjeelTodayQueue"><div style="text-align:center;padding:40px;color:var(--tm)"><div style="font-size:2rem;margin-bottom:12px">🔍</div>Loading queue...</div></div></div>
+    </div>
+</div>
+
+<!-- ▸ TASJEEL: Inspection Slots -->
+<div class="portal-section" id="sec-tasjeelSlots">
+    <div class="portal-header"><h1>Inspection Slots</h1><p>Manage available inspection time slots</p></div>
+    <div class="portal-content">
+        <div class="profile-card" style="max-width:700px;margin-bottom:24px">
+            <h3 style="margin-bottom:16px">Add Slot Availability</h3>
+            <div class="profile-form-row">
+                <div class="profile-form-group"><label>Date</label><input type="date" id="slotDate" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%"></div>
+                <div class="profile-form-group"><label>Max Vehicles</label><input type="number" id="slotCapacity" placeholder="20" min="1" max="100"></div>
+            </div>
+            <button class="btn btn-primary" onclick="addTasjeelSlot()">Add Slot</button>
+        </div>
+        <div class="profile-card" style="max-width:900px"><h3 style="margin-bottom:16px">Current Slot Schedule</h3><div id="tasjeelSlotList"><div style="text-align:center;padding:40px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.85rem">No slots configured yet.</div></div></div>
+    </div>
+</div>
+
+<!-- ▸ TASJEEL: Inspection Results -->
+<div class="portal-section" id="sec-tasjeelResults">
+    <div class="portal-header"><h1>Inspection Results</h1><p>Enter and manage vehicle inspection outcomes</p></div>
+    <div class="portal-content">
+        <div class="profile-card" style="max-width:700px;margin-bottom:24px">
+            <h3 style="margin-bottom:16px">Record Inspection Result</h3>
+            <div class="profile-form-row">
+                <div class="profile-form-group"><label>Plate Number</label><input type="text" id="resultPlate" placeholder="A 12345 Dubai"></div>
+                <div class="profile-form-group"><label>VIN (optional)</label><input type="text" id="resultVin" placeholder="Chassis no."></div>
+            </div>
+            <div class="profile-form-row">
+                <div class="profile-form-group"><label>Result</label>
+                    <select id="resultStatus" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                        <option value="passed">✅ Passed</option>
+                        <option value="failed">❌ Failed</option>
+                        <option value="conditional">⚠️ Conditional Pass</option>
+                    </select>
+                </div>
+                <div class="profile-form-group"><label>Inspector Notes</label><input type="text" id="resultNotes" placeholder="Brake pads worn, lights OK..."></div>
+            </div>
+            <button class="btn btn-primary" onclick="recordTasjeelResult()">Save Result</button>
+        </div>
+        <div class="profile-card" style="max-width:900px"><h3 style="margin-bottom:16px">Recent Results</h3><div id="tasjeelResultsList"><div style="text-align:center;padding:40px;color:var(--tm)"><div style="font-size:2rem;margin-bottom:12px">📋</div>No results recorded yet.</div></div></div>
+    </div>
+</div>
+
+<!-- ▸ TASJEEL: Booking Queue -->
+<div class="portal-section" id="sec-tasjeelQueue">
+    <div class="portal-header"><h1>Booking Queue</h1><p>All renewal inspection bookings awaiting processing</p></div>
+    <div class="portal-content"><div class="profile-card" style="max-width:900px"><div id="tasjeelBookingQueue"><div style="text-align:center;padding:60px;color:var(--tm)"><div style="font-size:2rem;margin-bottom:12px">📅</div>Loading bookings...</div></div></div></div>
+</div>
+
+<!-- ▸ MARKETPLACE OPERATOR: Dashboard -->
+<div class="portal-section" id="sec-mktDashboard">
+    <div class="portal-header"><h1>Marketplace Dashboard</h1><p>Operator view — manage verified vehicle listings</p></div>
+    <div class="portal-content">
+        <div class="portal-stats-row" style="margin-bottom:24px">
+            <div class="pstat-card"><div class="pstat-icon" style="background:rgba(200,216,228,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--c)" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div><div><div class="pstat-val" id="mktStatListings">—</div><div class="pstat-lbl">Active Listings</div></div></div>
+            <div class="pstat-card"><div class="pstat-icon" style="background:rgba(74,222,128,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div><div><div class="pstat-val" id="mktStatVerified">—</div><div class="pstat-lbl">Verified Listings</div></div></div>
+            <div class="pstat-card"><div class="pstat-icon" style="background:rgba(255,68,68,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg></div><div><div class="pstat-val" id="mktStatSold">—</div><div class="pstat-lbl">Sold Vehicles</div></div></div>
+            <div class="pstat-card"><div class="pstat-icon" style="background:rgba(245,158,11,.08)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><div class="pstat-val" id="mktStatValue">—</div><div class="pstat-lbl">Total Listing Value (AED)</div></div></div>
+        </div>
+        <div class="profile-card" style="max-width:700px;margin-bottom:24px">
+            <h3 style="margin-bottom:16px">🛒 Operator Profile</h3>
+            <div class="profile-form-row">
+                <div class="profile-form-group"><label>Platform Name</label><input type="text" id="mktPlatformName" placeholder="Gulf Motors Marketplace"></div>
+                <div class="profile-form-group"><label>Contact Person</label><input type="text" id="mktContactPerson" placeholder="Sara Ahmed"></div>
+                <div class="profile-form-group"><label>Business Licence</label><input type="text" id="mktBizLicense" placeholder="MKT-XXXX"></div>
+            </div>
+            <button class="btn btn-primary" onclick="saveMktProfile()">Save Profile</button>
+        </div>
+        <div class="profile-card" style="max-width:900px"><h3 style="margin-bottom:16px">📈 Top Listings by Value</h3><div id="mktTopListings"><div style="text-align:center;padding:40px;color:var(--tm)"><div style="font-size:2rem;margin-bottom:12px">🛒</div>Loading listings...</div></div></div>
+    </div>
+</div>
+
+<!-- ▸ MARKETPLACE OPERATOR: All Listings -->
+<div class="portal-section" id="sec-mktListings">
+    <div class="portal-header"><h1>All Listings</h1><p>Every vehicle listed on the MEHRA marketplace</p></div>
+    <div class="portal-content">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+            <input type="text" id="mktListingsSearch" placeholder="Search by make, model, plate..." oninput="filterMktListings(this.value)" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;padding:9px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.85rem;outline:none;flex:1;min-width:200px">
+            <select id="mktListingsFilter" onchange="filterMktListings(document.getElementById('mktListingsSearch').value)" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;padding:9px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.85rem;outline:none">
+                <option value="all">All Status</option>
+                <option value="active">Active</option>
+                <option value="sold">Sold</option>
+            </select>
+        </div>
+        <div id="mktAllListingsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px"><div style="text-align:center;padding:60px;color:var(--tm);grid-column:1/-1"><div style="font-size:2rem;margin-bottom:12px">📦</div>Loading listings...</div></div>
+    </div>
+</div>
+
+<!-- ▸ MARKETPLACE OPERATOR: Verification Queue -->
+<div class="portal-section" id="sec-mktVerification">
+    <div class="portal-header"><h1>Verification Queue</h1><p>Review and verify pending vehicle listings</p></div>
+    <div class="portal-content"><div class="profile-card" style="max-width:900px"><div id="mktVerificationQueue"><div style="text-align:center;padding:60px;color:var(--tm)"><div style="font-size:2rem;margin-bottom:12px">🔐</div>Loading verification queue...</div></div></div></div>
+</div>
+
+<!-- ▸ MARKETPLACE OPERATOR: Analytics -->
+<div class="portal-section" id="sec-mktAnalytics">
+    <div class="portal-header"><h1>Marketplace Analytics</h1><p>Performance insights and sales data</p></div>
+    <div class="portal-content"><div class="profile-card" style="max-width:900px"><div id="mktAnalyticsPanel"><div style="text-align:center;padding:60px;color:var(--tm)"><div style="font-size:2rem;margin-bottom:12px">📊</div>Loading analytics...</div></div></div></div>
+</div>
+
+<!-- INSURANCE: Incoming Claims -->
+<div class="portal-section" id="sec-insClaims">
+    <div class="portal-header">
+        <h1>Incoming Claims</h1>
+        <p>Review and authorize accident repair claims</p>
+    </div>
+    <div class="portal-content" id="insClaimsList"></div>
+</div>
+
+<!-- INSURANCE: History -->
+<div class="portal-section" id="sec-insHistory">
+    <div class="portal-header">
+        <h1>Claims History</h1>
+        <p>All processed insurance claims</p>
+    </div>
+    <div class="portal-content" id="insHistoryList"></div>
+</div>
+
+<!-- INSURANCE: Policy Holders -->
+<div class="portal-section" id="sec-insPolicyHolders">
+    <div class="portal-header">
+        <h1>Policy Holders</h1>
+        <p>Vehicles with active insurance policies registered in MEHRA</p>
+    </div>
+    <div class="portal-content" id="insPolicyHoldersList">
+        <div style="text-align:center;padding:60px 20px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.85rem">
+            <div style="font-size:2.5rem;margin-bottom:12px">🛡️</div>Loading policy holders...
+        </div>
+    </div>
+</div>
+
+            <!-- ▸ OWNER: Registration Renewal -->
+            <div class="portal-section" id="sec-renewal">
+                <div class="portal-header">
+                    <h1>Registration Renewal</h1>
+                    <p>Check your vehicle status and book a Tasjeel renewal inspection</p>
+                </div>
+                <div class="portal-content">
+                    <div class="portal-stats-row" style="margin-bottom:24px">
+                        <div class="pstat-card">
+                            <div class="pstat-icon" style="background:rgba(200,216,228,.08)">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--c)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                            </div>
+                            <div>
+                                <div class="pstat-val" id="renewalRegExpiry">—</div>
+                                <div class="pstat-lbl">Registration Expiry</div>
+                            </div>
+                        </div>
+                        <div class="pstat-card">
+                            <div class="pstat-icon" style="background:rgba(245,158,11,.08)">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            </div>
+                            <div>
+                                <div class="pstat-val" id="renewalInsExpiry">—</div>
+                                <div class="pstat-lbl">Insurance Expiry</div>
+                            </div>
+                        </div>
+                        <div class="pstat-card">
+                            <div class="pstat-icon" style="background:rgba(255,68,68,.08)">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            </div>
+                            <div>
+                                <div class="pstat-val" id="renewalFinesCount">—</div>
+                                <div class="pstat-lbl">Outstanding Fines</div>
+                            </div>
+                        </div>
+                        <div class="pstat-card">
+                            <div class="pstat-icon" style="background:rgba(74,222,128,.08)">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            </div>
+                            <div>
+                                <div class="pstat-val" id="renewalReadyStatus">—</div>
+                                <div class="pstat-lbl">Renewal Eligibility</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-card" style="max-width:680px;margin-bottom:24px">
+                        <h3 style="margin-bottom:16px">Renewal Checklist</h3>
+                        <div id="renewalChecklist" style="display:flex;flex-direction:column;gap:12px">
+                            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid var(--border)">
+                                <div id="rcheck-reg-icon" style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(245,158,11,.1);color:#f59e0b;font-weight:700;font-size:.8rem;flex-shrink:0">?</div>
+                                <div style="flex:1"><div style="font-weight:700;font-size:.9rem;color:var(--t)">Registration Status</div><div id="rcheck-reg-sub" style="font-size:.78rem;color:var(--tm);margin-top:2px;font-family:'JetBrains Mono',monospace">Loading...</div></div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid var(--border)">
+                                <div id="rcheck-ins-icon" style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(245,158,11,.1);color:#f59e0b;font-weight:700;font-size:.8rem;flex-shrink:0">?</div>
+                                <div style="flex:1"><div style="font-weight:700;font-size:.9rem;color:var(--t)">Insurance Status</div><div id="rcheck-ins-sub" style="font-size:.78rem;color:var(--tm);margin-top:2px;font-family:'JetBrains Mono',monospace">Loading...</div></div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid var(--border)">
+                                <div id="rcheck-fines-icon" style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(245,158,11,.1);color:#f59e0b;font-weight:700;font-size:.8rem;flex-shrink:0">?</div>
+                                <div style="flex:1"><div style="font-weight:700;font-size:.9rem;color:var(--t)">Outstanding Fines</div><div id="rcheck-fines-sub" style="font-size:.78rem;color:var(--tm);margin-top:2px;font-family:'JetBrains Mono',monospace">Loading...</div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-card" style="max-width:680px">
+                        <h3 style="margin-bottom:6px">Book Tasjeel Inspection Slot</h3>
+                        <p style="color:var(--tm);font-size:.85rem;margin-bottom:18px">Select a centre and date for your renewal inspection</p>
+                        <div id="renewalBlockedBanner" style="display:none;background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.25);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.85rem;color:var(--red)">
+                            ⚠️ Renewal blocked — resolve outstanding issues first.
+                        </div>
+                        <div class="profile-form-row">
+                            <div class="profile-form-group">
+                                <label>Inspection Centre</label>
+                                <select id="renewalCentre" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                                    <option value="">Select Tasjeel centre...</option>
+                                    <option value="tasjeel-al-quoz">Tasjeel Al Quoz, Dubai</option>
+                                    <option value="tasjeel-deira">Tasjeel Deira, Dubai</option>
+                                    <option value="tasjeel-sharjah">Tasjeel Sharjah</option>
+                                    <option value="tasjeel-ajman">Tasjeel Ajman</option>
+                                    <option value="wasel-abu-dhabi">Wasel Abu Dhabi</option>
+                                </select>
+                            </div>
+                            <div class="profile-form-group">
+                                <label>Preferred Date</label>
+                                <input type="date" id="renewalDate" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                            </div>
+                        </div>
+                        <div class="profile-form-group" style="margin-bottom:18px">
+                            <label>Preferred Time Slot</label>
+                            <select id="renewalTime" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                                <option value="08:00">08:00 AM</option>
+                                <option value="09:00">09:00 AM</option>
+                                <option value="10:00">10:00 AM</option>
+                                <option value="11:00">11:00 AM</option>
+                                <option value="13:00">01:00 PM</option>
+                                <option value="14:00">02:00 PM</option>
+                                <option value="15:00">03:00 PM</option>
+                                <option value="16:00">04:00 PM</option>
+                            </select>
+                        </div>
+                        <div id="renewalSelfReport" style="display:none;background:rgba(200,216,228,.04);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:16px;">
+                            <div style="font-weight:700;color:var(--t);margin-bottom:10px;">📋 Appointment Completed — Report Result</div>
+                            <p style="font-size:0.82rem;color:var(--tm);margin-bottom:14px;font-family:'JetBrains Mono',monospace;">Your inspection appointment date has passed. Please self-report the outcome until official Tasjeel integration is available.</p>
+                            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                                <button onclick="markRenewalResult('passed')" style="padding:9px 20px;background:rgba(74,222,128,0.1);color:#4ade80;border:1px solid rgba(74,222,128,0.3);border-radius:8px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;">✅ Mark as Passed</button>
+                                <button onclick="markRenewalResult('failed')" style="padding:9px 20px;background:rgba(255,68,68,0.08);color:#ff6666;border:1px solid rgba(255,68,68,0.25);border-radius:8px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;">❌ Mark as Failed</button>
+                            </div>
+                        </div>
+                        <div id="renewalConfirmed" style="display:none;background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25);border-radius:12px;padding:16px 20px;margin-bottom:16px">
+                            <div style="font-weight:700;color:#4ade80;margin-bottom:6px">✅ Inspection Slot Booked!</div>
+                            <div id="renewalConfirmedDetails" style="font-size:.85rem;color:var(--tm);font-family:'JetBrains Mono',monospace"></div>
+                        </div>
+                        <button class="btn btn-primary" id="btnBookRenewal" onclick="bookRenewalSlot()">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                            Confirm Booking
+                        </button>
+                    </div>
+
+                    <div style="margin-top:24px">
+                        <h3 style="font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:var(--t);margin-bottom:16px">Renewal Booking History</h3>
+                        <div id="renewalHistoryList">
+                            <div style="text-align:center;padding:40px 20px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.82rem">No renewal records yet.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ▸ OWNER: Marketplace / Verified History -->
+            <div class="portal-section" id="sec-marketplace">
+                <div class="portal-header">
+                    <h1>Marketplace</h1>
+                    <p>Verified vehicle history for buyers — trustworthy and shareable</p>
+                </div>
+                <div class="portal-content">
+                    <div class="profile-card" style="max-width:800px;margin-bottom:28px">
+                        <h3 style="margin-bottom:6px">Your Verified Listing</h3>
+                        <p style="color:var(--tm);font-size:.85rem;margin-bottom:18px">Generate a shareable verified car history report for potential buyers.</p>
+                        <div id="mpVehicleDisplay" style="background:rgba(200,216,228,.04);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:18px;font-size:.85rem;color:var(--tm);font-family:'JetBrains Mono',monospace">No vehicle data — upload Mulkiya in My Profile first.</div>
+                        <div class="profile-form-row" style="margin-bottom:16px">
+                            <div class="profile-form-group">
+                                <label>Asking Price (AED)</label>
+                                <input type="number" id="mpPrice" placeholder="85000" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                            </div>
+                            <div class="profile-form-group">
+                                <label>Seller Contact</label>
+                                <input type="text" id="mpContact" placeholder="+971 XX XXX XXXX" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%">
+                            </div>
+                        </div>
+                        <div class="profile-form-group" style="margin-bottom:18px">
+                            <label>Additional Notes</label>
+                            <textarea id="mpNotes" rows="3" placeholder="Full service history, single owner, no accidents..." style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.875rem;outline:none;width:100%;resize:vertical"></textarea>
+                        </div>
+                        <div style="display:flex;gap:12px;flex-wrap:wrap">
+                            <button class="btn btn-primary" onclick="publishMarketplaceListing()">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                Publish Verified Listing
+                            </button>
+                            <button class="btn btn-ghost" onclick="generateMarketplaceReport()">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                Download Buyer Report
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+                            <h3 style="font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:var(--t);margin:0">Verified Listings</h3>
+                            <input type="text" id="mpSearch" placeholder="Search by make, model..." oninput="filterMarketplace(this.value)" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:.85rem;outline:none;width:220px">
+                        </div>
+                        <div class="garage-cards-grid" id="marketplaceGrid">
+                            <div style="text-align:center;padding:60px 20px;color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:.85rem;grid-column:1/-1">
+                                <div style="font-size:2.5rem;margin-bottom:12px">🛒</div>No verified listings yet — be the first to publish!
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>

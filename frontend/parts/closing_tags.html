@@ -1,0 +1,33 @@
+
+    <div id="chatbot-widget">
+        <div class="chatbot-icon" onclick="toggleChatbot()">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+        </div>
+        <div class="chatbot-window" id="chatbotWindow">
+            <div class="chatbot-header">
+                <div style="font-weight:800;font-size:1.1rem">MEHRA AI</div>
+                <button onclick="toggleChatbot()"
+                    style="background:transparent;border:none;color:#fff;cursor:pointer;font-size:1.2rem">✕</button>
+            </div>
+            <div class="chatbot-body" id="cbBody">
+                <div class="cb-msg bot">Hi! I'm your AI assistant. I can help you with app usage, booking status, or
+                    simple
+                    vehicle issues.</div>
+            </div>
+            <div class="chatbot-footer">
+                <input type="text" id="cbInput" placeholder="Type here..."
+                    onkeypress="if(event.key==='Enter') sendChatMessage()">
+                <button onclick="sendChatMessage()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
