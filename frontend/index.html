@@ -10,6 +10,7 @@
         href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="/static/styles.css">
+    
    <!-- Firebase SDK -->
 <!-- Firebase SDK -->
 <script type="module">
@@ -372,6 +373,17 @@
                         <circle cx="12" cy="10" r="3" />
                     </svg>Book Garage
                 </div>
+                <div class="snav-item" id="snav-reportAccident" onclick="portalGoTo('reportAccident')">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>Report Accident
+</div>
+<div class="snav-item" id="snav-myClaims" onclick="portalGoTo('myClaims')">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>My Claims
+</div>
                 <div class="snav-item" id="snav-carlife" onclick="portalGoTo('carLife')">
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -415,6 +427,16 @@
                         <line x1="3" y1="10" x2="21" y2="10" />
                     </svg>My Appointments
                 </div>
+                <div class="snav-item" id="snav-walkinClaim" onclick="portalGoTo('walkinClaim')">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>Walk-in Claim
+</div>
+<div class="snav-item" id="snav-claimHistory" onclick="portalGoTo('claimHistory')">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 8 12 12 14 14"/>
+    </svg>Claim History
+</div>
                 <div class="snav-item" id="snav-inbox-garage" onclick="portalGoTo('inbox')">
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M22 17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5C2 7 4 5 6.5 5h11C20 5 22 7 22 9.5V17z" />
@@ -1612,7 +1634,165 @@
                     </div>
                 </div>
             </div>
+<!-- OWNER: Report Accident -->
+<div class="portal-section" id="sec-reportAccident">
+    <div class="portal-header">
+        <h1>Report an Accident</h1>
+        <p>Run an AI vehicle inspection, select a nearby garage, and submit your insurance claim automatically</p>
+    </div>
+    <div class="portal-content">
+        <!-- Insurance banner -->
+        <div id="accidentInsuranceBanner" style="display:none;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.25);border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:.85rem;color:#4ade80;font-family:'JetBrains Mono',monospace;"></div>
 
+        <!-- Vehicle preview -->
+        <div id="accVehiclePreview" style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:.85rem;color:var(--tm);font-family:'JetBrains Mono',monospace">
+            Loading vehicle info...
+        </div>
+
+        <!-- STEP 1: AI Inspection -->
+        <div class="profile-card" style="max-width:800px;margin-bottom:24px" id="accStepInspection">
+            <h3 style="margin-bottom:6px;">Step 1 — AI Vehicle Inspection</h3>
+            <p style="font-size:0.82rem;color:var(--tm);margin-bottom:16px;">Upload photos of the accident damage. Our AI will analyse it and generate a PDF accident report.</p>
+
+            <!-- Upload zone -->
+            <div class="upload-zone" id="accUploadZone"
+                onclick="document.getElementById('accFileInput').click()"
+                ondragover="event.preventDefault();this.classList.add('drag')"
+                ondragleave="this.classList.remove('drag')"
+                ondrop="handleAccidentDrop(event)"
+                style="margin-bottom:16px;">
+                <div class="uz-ico">📸</div>
+                <p>Drop accident scene / vehicle photos here or click to browse</p>
+                <span>JPG · PNG · WEBP</span>
+            </div>
+            <input type="file" id="accFileInput" multiple accept="image/*" onchange="handleAccidentFiles(this.files)" style="display:none">
+
+            <div id="accImgPreviewGrid" class="img-preview-grid" style="margin-bottom:12px;"></div>
+
+            <div id="accScanResultBox" style="display:none;background:rgba(74,222,128,0.06);border:1px solid rgba(74,222,128,0.2);border-radius:12px;padding:16px;margin-bottom:16px;">
+                <div style="font-weight:800;color:#4ade80;margin-bottom:8px;">✅ AI Inspection Complete</div>
+                <div id="accScanSummary" style="font-size:0.82rem;color:var(--tm);font-family:'JetBrains Mono',monospace;"></div>
+            </div>
+
+            <button class="btn btn-primary" id="btnAccidentScan" onclick="runAccidentInspection()" style="display:none;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                Run AI Inspection
+            </button>
+        </div>
+
+        <!-- STEP 2: Incident Details + Nearby Garage -->
+        <div class="profile-card" style="max-width:800px;margin-bottom:24px" id="accStepDetails">
+            <h3 style="margin-bottom:6px;">Step 2 — Incident Details &amp; Select Garage</h3>
+
+            <div class="profile-form-row" style="margin-bottom:14px;">
+                <div class="profile-form-group">
+                    <label>Incident Date</label>
+                    <input type="date" id="accDate">
+                </div>
+                <div class="profile-form-group">
+                    <label>Incident Location</label>
+                    <input type="text" id="accLocation" placeholder="e.g. Sheikh Zayed Road, Dubai">
+                </div>
+            </div>
+
+            <!-- Garage selector via live location -->
+            <div style="margin-bottom:14px;">
+                <label style="font-size:0.82rem;color:var(--tm);display:block;margin-bottom:10px;font-weight:700;">Garage / Repair Centre</label>
+                <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+                    <button class="btn btn-primary" onclick="enableAccidentLocation()" style="padding:9px 18px;font-size:0.82rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                        Use Live Location
+                    </button>
+                    <span id="accLocationStatus" style="font-size:0.78rem;color:var(--tm);font-family:'JetBrains Mono',monospace;">or type a garage name below</span>
+                </div>
+                <div id="accNearbyGaragesBox" style="display:none;margin-bottom:12px;max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;"></div>
+                <input type="text" id="accGarage" placeholder="Selected or type garage name..." style="width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--t);font-family:'Syne',sans-serif;font-size:0.875rem;outline:none;">
+            </div>
+        </div>
+
+        <!-- STEP 3: Submit -->
+        <div class="profile-card" style="max-width:800px;margin-bottom:24px" id="accStepSubmit">
+            <h3 style="margin-bottom:16px;">Step 3 — Submit Claim</h3>
+            <button class="btn btn-primary" onclick="submitOwnerAccidentClaim()" style="width:100%;padding:14px;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Submit Insurance Claim &amp; Send PDF to Insurer
+            </button>
+            <p style="font-size:0.78rem;color:var(--tm);margin-top:10px;text-align:center;">The PDF accident report and your vehicle details will be sent automatically to your insurance company for approval.</p>
+        </div>
+    </div>
+</div>
+
+<!-- OWNER: My Claims -->
+<div class="portal-section" id="sec-myClaims">
+    <div class="portal-header">
+        <h1>My Insurance Claims</h1>
+        <p>Track all submitted accident claims and their status</p>
+    </div>
+    <div class="portal-content" id="ownerClaimsList">
+        <div style="text-align:center;padding:60px;color:var(--tm)"><div style="font-size:2.5rem;margin-bottom:12px">🛡️</div>No claims yet.</div>
+    </div>
+</div>
+
+<!-- GARAGE: Walk-in Claim -->
+<div class="portal-section" id="sec-walkinClaim">
+    <div class="portal-header">
+        <h1>Walk-in Accident Claim</h1>
+        <p>Customer arrived without a booking — look up their vehicle and create a claim directly</p>
+    </div>
+    <div class="portal-content">
+        <div class="profile-card" style="max-width:700px;margin-bottom:24px">
+            <h3>🔍 Look Up Vehicle Owner</h3>
+            <div class="profile-form-row">
+                <div class="profile-form-group">
+                    <label>Plate Number</label>
+                    <input type="text" id="wiPlate" placeholder="A 12345 Dubai">
+                </div>
+                <div class="profile-form-group">
+                    <label>VIN / Chassis No.</label>
+                    <input type="text" id="wiVin" placeholder="Optional">
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="lookupVehicleOwner()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Search Owner
+            </button>
+        </div>
+        <div id="wiOwnerResult" style="display:none" class="profile-card" style="max-width:700px;margin-bottom:24px"></div>
+        <div id="wiClaimForm" style="display:none" class="profile-card" style="max-width:700px">
+            <h3>🛡️ Create Insurance Claim</h3>
+            <div id="wiInsuranceBanner" style="background:rgba(200,216,228,0.08);border:1px solid rgba(200,216,228,0.2);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.85rem;color:var(--c);font-family:'JetBrains Mono',monospace;"></div>
+            <div class="profile-form-group" style="margin-bottom:14px">
+                <label>Damage Description</label>
+                <textarea id="wiDamageDesc" rows="3" placeholder="Describe the damage observed..."></textarea>
+            </div>
+            <div class="profile-form-row">
+                <div class="profile-form-group">
+                    <label>Estimated Repair Cost (AED)</label>
+                    <input type="number" id="wiEstCost" placeholder="5000">
+                </div>
+                <div class="profile-form-group">
+                    <label>Incident Date</label>
+                    <input type="date" id="wiIncidentDate">
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="submitWalkinClaim()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Submit Claim to Insurance
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- GARAGE: Claim History -->
+<div class="portal-section" id="sec-claimHistory">
+    <div class="portal-header">
+        <h1>Claim History</h1>
+        <p>All insurance claims submitted by this garage</p>
+    </div>
+    <div class="portal-content" id="garageClaimHistoryList">
+        <div style="text-align:center;padding:60px;color:var(--tm)"><div style="font-size:2.5rem;margin-bottom:12px">📋</div>Loading...</div>
+    </div>
+</div>
 
 <!-- ▸ RTA: Dashboard -->
 <div class="portal-section" id="sec-rtaDashboard">
@@ -2671,7 +2851,6 @@ document.getElementById('marketplaceNav').style.display = 'none';
                     role,
                     email,
                     createdAt: new Date().toISOString(),
-                    role, email, createdAt: new Date().toISOString(),
                     insurance: {
                         name:    document.getElementById('authInsuranceName').value.trim(),
                         license: document.getElementById('authInsuranceLicense').value.trim(),
@@ -2782,12 +2961,6 @@ document.getElementById('marketplaceNav').style.display = 'none';
     document.getElementById('loginTab').classList.toggle('active', !s);
     document.getElementById('signupTab').classList.toggle('active', s);
 
-            document.getElementById('nameFields').style.display = s ? 'block' : 'none';
-            if (s) {
-             document.getElementById('ownerFields').style.display = role === 'owner' ? 'block' : 'none';
-                document.getElementById('garageFields').style.display = role === 'garage' ? 'block' : 'none';
-                document.getElementById('insuranceFields').style.display = role === 'insurance' ? 'block' : 'none';
-                   }
     const role = document.getElementById('roleSelect').value || 'owner';
 
     // All role-specific field group IDs
@@ -3047,8 +3220,6 @@ setTimeout(() => checkExpiryWarnings(), 2000); // slight delay so UI settles
     renderPortalAppointments();
     updateBellBadge();
 }
-        function hidePortal() {
-    document.getElementById('rolePortal').classList.remove('active');
 function hidePortal() {
     // Stop listeners
     if (typeof stopAppointmentsListener === 'function') stopAppointmentsListener();
@@ -3281,6 +3452,10 @@ insHistory: 'snav-insHistory',
         mktListings: 'snav-mktListings',
         mktVerification: 'snav-mktVerification',
         mktAnalytics: 'snav-mktAnalytics',
+        reportAccident: 'snav-reportAccident',
+myClaims:       'snav-myClaims',
+walkinClaim:    'snav-walkinClaim',
+claimHistory:   'snav-claimHistory',
     };
 
     const navId = map[section];
@@ -3294,7 +3469,6 @@ insHistory: 'snav-insHistory',
 
     // Section-specific init
     if (section === 'appointments') renderGarageAppointments();
-    if (section === 'bookGarage') populateGarageCards();
     if (section === 'inbox') renderInbox();
 if (section === 'bookGarage') {
     populateGarageCards(); // shows fallback + MEHRA verified immediately
@@ -3305,7 +3479,7 @@ if (section === 'bookGarage') {
             countEl.textContent = `${garages.length} MEHRA verified garage${garages.length !== 1 ? 's' : ''} · Enable location for nearby garages`;
         }
     }).catch(() => {});
-}    if (section === 'inbox') renderInbox();
+}
     if (section === 'insClaims')  renderInsClaims();
 if (section === 'insHistory') renderInsHistory();
 if (section === 'insPolicyHolders') renderInsPolicyHolders();
@@ -3337,6 +3511,10 @@ if (section === 'insPolicyHolders') renderInsPolicyHolders();
     if (section === 'mktListings') renderMktListings();
     if (section === 'mktVerification') renderMktVerification();
     if (section === 'mktAnalytics') renderMktAnalytics();
+    if (section === 'reportAccident') renderReportAccidentSection();
+if (section === 'myClaims')       renderOwnerClaims();
+if (section === 'walkinClaim')    renderWalkinClaimForm();
+if (section === 'claimHistory')   renderGarageClaimHistory();
 
     // ==================== FIX 4 — Garage Profile Auto-populate + Warning Banner ====================
     if (section === 'garageProfile') {
@@ -3913,12 +4091,6 @@ async function renderGarageAppointments() {
     const uid = window._currentUser?.uid;
     if (!uid) return;
 
-    const snapG = await window._fsGetDoc(
-        window._fsDoc(window._fbDb, 'users', uid, 'profile', 'garage')
-    );
-    const savedG = snapG.exists() ? snapG.data() : {};
-    const myName = (savedG.name || '').trim().toLowerCase();
-    if (savedG.name) renderInsuranceAuthorizedJobs(savedG.name);
     // Use global cache first, then Firestore
     let savedG = window._garageProfile || {};
 
@@ -4770,37 +4942,8 @@ if (insuranceMessages.length) {
 }
 
 list.innerHTML = html;
-        // Mark garage notifs read
-        const gNotifs = await getGarageNotifications(myName);
-for (const n of gNotifs) {
-    if (!n.read) {
-        await window._fsUpdateDoc(
-            window._fsDoc(window._fbDb, 'garageNotifications', n.id),
-            { read: true }
-        );
-    }
 
-    // Fetch insurance approval notifications and append to html
-    try {
-        const insuranceNotifs = await getGarageNotifications(myName);
-        const insuranceMessages = insuranceNotifs.filter(n => n.type === 'approved' || n.type === 'rejected');
-        if (insuranceMessages.length) {
-            html += `<div style="font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:0.12em;color:#4ade80;font-family:'JetBrains Mono',monospace;margin:18px 0 12px;padding-left:4px;">🛡️ Insurance Decisions</div>`;
-            html += insuranceMessages.map(n => {
-                const sc = n.type === 'approved' ? 'rgba(74,222,128,0.08)' : 'rgba(255,68,68,0.08)';
-                const bc = n.type === 'approved' ? 'rgba(74,222,128,0.3)' : 'rgba(255,68,68,0.3)';
-                return `<div style="background:${sc};border:1px solid ${bc};border-radius:10px;padding:14px 16px;margin-bottom:8px;">
-                    <div style="font-size:0.88rem;color:var(--t);font-weight:600;line-height:1.4">${n.text}</div>
-                    <div style="font-size:0.7rem;color:var(--tm);margin-top:4px;font-family:'JetBrains Mono',monospace">${n.date}</div>
-                </div>`;
-            }).join('');
-        }
-    } catch(e) { console.warn('[Inbox] insurance notifs failed:', e); }
-
-    // Set innerHTML once at the end
-    list.innerHTML = html;
-
-    // Mark garage notifs as read
+    // Mark garage notifications as read
     try {
         const gNotifs = await getGarageNotifications(myName);
         for (const n of gNotifs) {
@@ -4811,7 +4954,7 @@ for (const n of gNotifs) {
                 );
             }
         }
-        // Mark garageInbox as read
+
         const inboxSnap = await window._fsGetDocs(window._fsCollection(window._fbDb, 'garageInbox'));
         for (const doc of inboxSnap.docs) {
             const n = doc.data();
@@ -4822,8 +4965,10 @@ for (const n of gNotifs) {
                 );
             }
         }
+
         setTimeout(() => updateBellBadge(), 300);
     } catch(e) { console.warn('[Inbox] mark read failed:', e); }
+    }
 
     } else {
         // OWNER: show booking tracking timeline + system notifications
@@ -5184,10 +5329,10 @@ window._carLifeUrl = clUrl; // keep blob for local download
         }
 
         // ── Step 4: QR Code ──
-        const shareableUrl = window._carLifeUrl || `${window.location.origin}/carlife-report`;
+        const finalShareableUrl = window._carLifeUrl || `${window.location.origin}/carlife-report`;
         const qrBox = document.getElementById('carLifeQrBox');
         if (qrBox) {
-            qrBox.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(shareableUrl)}" 
+            qrBox.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(finalShareableUrl)}" 
                 style="width:100%;height:100%;object-fit:contain;border-radius:6px;">`;
         }
 
@@ -7237,13 +7382,6 @@ async function saveInsuranceProfile() {
 
 async function createInsuranceClaim(appt) {
     try {
-        const mulkiyaSnap = await window._fsGetDoc(
-            window._fsDoc(window._fbDb, 'users', appt.ownerId, 'profile', 'mulkiya')
-        );
-        const mulkiya = mulkiyaSnap.exists() ? mulkiyaSnap.data() : {};
-        const insuranceCompany = mulkiya.insuranceCompany || '—';
-        const policyNo         = mulkiya.insurancePolicy  || '—';
-
         // Get vehicle data — try vehicles subcollection first, then legacy mulkiya
         let mulkiya = {};
         try {
@@ -7312,38 +7450,20 @@ async function createInsuranceClaim(appt) {
             window._fsDoc(window._fbDb, 'insuranceClaims', claimId), claim
         );
 
-        notifyUser(appt.ownerId,
-            `🛡️ Insurance claim auto-submitted to <strong>${insuranceCompany}</strong> for your accident repair at ${appt.garage}.`,
+        await notifyUser(appt.ownerId,
+            `🛡️ Insurance claim auto-submitted to <strong>${insuranceCompany}</strong> for your accident repair at ${appt.garage}. Policy: ${policyNo}. Awaiting insurer review.`,
             'confirmed'
         );
 
-        toast(`✓ Insurance claim auto-sent to ${insuranceCompany}`, 'success');
-    } catch(e) {
-        console.warn('[Insurance Claim] failed:', e);
-    }
-}
-
-        // Notify owner
-        await notifyUser(
-            appt.ownerId,
-            `🛡️ Insurance claim auto-submitted to <strong>${insuranceCompany}</strong> ` +
-            `for your accident repair at <strong>${appt.garage}</strong>. ` +
-            `Policy: ${policyNo}. Awaiting insurer review.`,
-            'confirmed'
-        );
-
-        // Notify garage that claim was submitted
         await notifyGarage(
             appt.garage,
-            `🛡️ Insurance claim submitted for ${appt.ownerName} (${appt.vehicle}). ` +
-            `Policy: ${policyNo} · Company: ${insuranceCompany}. Awaiting approval.`,
+            `🛡️ Insurance claim submitted for ${appt.ownerName} (${appt.vehicle}). Policy: ${policyNo} · Company: ${insuranceCompany}. Awaiting approval.`,
             'pending',
             appt.id
         );
 
         toast(`✓ Insurance claim auto-sent to ${insuranceCompany}`, 'success');
         return claimId;
-
     } catch(e) {
         console.error('[Insurance Claim] failed:', e);
         toast('Insurance claim submission failed', 'error');
@@ -7416,6 +7536,9 @@ async function renderInsClaims() {
                      <strong>${c.appointmentDate||c.createdAt||'—'}</strong></div>
             </div>
             ${c.notes?`<div style="font-size:0.78rem;color:var(--td);font-style:italic;margin-bottom:12px;">📝 ${c.notes}</div>`:''}
+            ${c.description&&!c.notes?`<div style="font-size:0.78rem;color:var(--td);margin-bottom:12px;">📝 ${c.description}</div>`:''}
+            ${c.accidentPdfUrl?`<a href="${c.accidentPdfUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:12px;padding:7px 14px;background:rgba(200,216,228,0.08);border:1px solid rgba(200,216,228,0.25);border-radius:8px;color:var(--c);font-size:0.78rem;font-weight:700;text-decoration:none;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>View AI Accident Report PDF</a>`:''}
+            ${c.aiScanData?`<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.75rem;color:var(--tm);font-family:'JetBrains Mono',monospace;">🤖 AI detected ${c.aiScanData.defectsFound||0} damage areas</div>`:''}
             ${c.status==='pending'?`
             <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
                 <input type="text" id="claimAmt_${c.id}" placeholder="Approved amount (AED)"
@@ -7486,18 +7609,15 @@ async function renderInsHistory() {
     }).join('');
 }
 async function processInsuranceClaim(claimId, decision) {
-    try {
-        const amount = document.getElementById(`claimAmt_${claimId}`)?.value.trim() || '';
     const btn = document.querySelector(`[onclick="processInsuranceClaim('${claimId}','${decision}')"]`);
     if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
 
     try {
         const amount = document.getElementById(`claimAmt_${claimId}`)?.value.trim() || '';
 
-        // Validate amount if approving
         if (decision === 'approved' && !amount) {
             toast('Please enter an approved amount (AED)', 'error');
-            if (btn) { btn.disabled = false; btn.textContent = decision === 'approved' ? '✅ Approve' : '❌ Reject'; }
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Approve'; }
             return;
         }
 
@@ -7514,29 +7634,11 @@ async function processInsuranceClaim(claimId, decision) {
                 status:         decision,
                 approvedAmount: amount || null,
                 processedAt:    new Date().toLocaleDateString(),
-            }
-        );
-
-        const ownerMsg = decision === 'approved'
-            ? `✅ Your insurance claim for accident repair at <strong>${claim.garageName}</strong> has been <strong>approved</strong>${amount?' — AED '+amount+' authorized':''}.`
-            : `❌ Your insurance claim for accident repair at <strong>${claim.garageName}</strong> was <strong>rejected</strong>. Please contact your insurer.`;
-        await notifyUser(claim.ownerId, ownerMsg, decision);
-
-        const garageMsg = decision === 'approved'
-            ? `🛡️ Insurance APPROVED for ${claim.ownerName}'s vehicle (${claim.vehicle})${amount?' — AED '+amount+' authorized':''}. Proceed with repair.`
-            : `🛡️ Insurance REJECTED for ${claim.ownerName}'s vehicle. Do not proceed without owner confirmation.`;
-        await notifyGarage(claim.garageName, garageMsg, decision === 'approved' ? 'confirmed' : 'rejected', claim.appointmentId);
-
-        toast(`Claim ${decision} ✓`, decision === 'approved' ? 'success' : 'error');
-        renderInsClaims();
-    } catch(e) {
-        console.error(e);
-        toast('Failed to process claim', 'error');
                 processedTs:    Date.now(),
             }
         );
 
-        // Update the linked appointment
+        // Update the linked appointment if present
         if (claim.appointmentId) {
             const newApptStatus = decision === 'approved' ? 'in_progress' : 'claim_rejected';
             await window._fsUpdateDoc(
@@ -7547,25 +7649,26 @@ async function processInsuranceClaim(claimId, decision) {
                     approvedAmount:    amount || null,
                     insuranceUpdated:  new Date().toLocaleDateString(),
                 }
-            );
+            ).catch(e => console.warn('[Claim] appt update failed:', e));
         }
 
         // Notify owner
         const ownerMsg = decision === 'approved'
             ? `✅ Your insurance claim has been <strong>approved</strong>` +
               `${amount ? ' — <strong>AED ' + amount + '</strong> authorized' : ''}. ` +
-              `Repairs will begin at <strong>${claim.garageName}</strong>.`
-            : `❌ Your insurance claim for repair at <strong>${claim.garageName}</strong> ` +
+              `Repairs will begin at <strong>${claim.garageName || 'the garage'}</strong>.` +
+              (claim.accidentPdfUrl ? ` <a href="${claim.accidentPdfUrl}" style="color:var(--c)">View PDF Report</a>` : '')
+            : `❌ Your insurance claim for repair at <strong>${claim.garageName || 'the garage'}</strong> ` +
               `was <strong>rejected</strong>. Please contact ${claim.insuranceCompany || 'your insurer'} for details.`;
-        await notifyUser(claim.ownerId, ownerMsg, decision === 'approved' ? 'confirmed' : 'rejected');
+        if (claim.ownerId) await notifyUser(claim.ownerId, ownerMsg, decision === 'approved' ? 'confirmed' : 'rejected');
 
         // Notify garage
         const garageMsg = decision === 'approved'
-            ? `✅ Insurance <strong>APPROVED</strong> for ${claim.ownerName} ` +
-              `(${claim.vehicle})${amount ? ' — AED ' + amount + ' authorized' : ''}. ` +
-              `Status updated to IN PROGRESS — proceed with repairs.`
-            : `❌ Insurance <strong>REJECTED</strong> for ${claim.ownerName} ` +
-              `(${claim.vehicle}). Do not proceed without owner confirmation.`;
+            ? `✅ Insurance <strong>APPROVED</strong> for ${claim.ownerName || 'customer'} ` +
+              `(${claim.vehicle || '—'})${amount ? ' — AED ' + amount + ' authorized' : ''}. ` +
+              `Proceed with accident repairs.`
+            : `❌ Insurance <strong>REJECTED</strong> for ${claim.ownerName || 'customer'} ` +
+              `(${claim.vehicle || '—'}). Do not proceed without owner confirmation.`;
         await notifyGarage(
             claim.garageName,
             garageMsg,
@@ -7575,12 +7678,11 @@ async function processInsuranceClaim(claimId, decision) {
 
         toast(
             decision === 'approved'
-                ? `✅ Claim approved — AED ${amount} sent to garage`
+                ? `✅ Claim approved — AED ${amount} authorized`
                 : '❌ Claim rejected — owner notified',
             decision === 'approved' ? 'success' : 'error'
         );
 
-        // Refresh claims views
         renderInsClaims();
         renderInsHistory();
         updateBellBadge();
@@ -7588,7 +7690,7 @@ async function processInsuranceClaim(claimId, decision) {
     } catch(e) {
         console.error('[Process Claim]', e);
         toast('Failed to process claim: ' + e.message, 'error');
-        if (btn) { btn.disabled = false; }
+        if (btn) { btn.disabled = false; btn.textContent = decision === 'approved' ? '✅ Approve' : '❌ Reject'; }
     }
 }
 let mulkiyaFiles = [];
@@ -8190,18 +8292,6 @@ async function checkExpiryWarnings() {
     const uid = window._currentUser?.uid;
     if (!uid) return;
     try {
-        const snap = await window._fsGetDoc(
-            window._fsDoc(window._fbDb, 'users', uid, 'profile', 'mulkiya')
-        );
-        if (!snap.exists()) return;
-        const d = snap.data();
-        const now = new Date();
-        const warnDays = 30;
-
-        const checks = [
-            { label: 'Registration', date: d.registrationExpiry },
-            { label: 'Insurance', date: d.insuranceExpiry },
-        ];
     let data = window._activeVehicle || null;
 if (!data) {
     const vSnap = await window._fsGetDocs(
@@ -8255,7 +8345,7 @@ function fetchWithTimeout(url, options, ms = 20000) {
 }
 // ==================== UPDATED GROQ VISION CALL ====================
 async function callGroqVision(base64Images) {
-  const GROQ_API_KEY = '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';
+  const GROQ_API_KEY = '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';
   
   const MODELS = [
     'meta-llama/llama-4-scout-17b-16e-instruct',
@@ -8905,8 +8995,6 @@ async function renderRenewalStatus() {
     if (!uid) return;
 
     try {
-        const snap = await window._fsGetDoc(window._fsDoc(window._fbDb, 'users', uid, 'profile', 'mulkiya'));
-        const data = snap.exists() ? snap.data() : {};
 let data = window._activeVehicle || {};
 if (!Object.keys(data).length) {
     try {
@@ -9627,6 +9715,1030 @@ async function markRenewalResult(result) {
     }
 }
 // ═══════════════════════════════════════════════════════════
+// OWNER: Report Accident
+// ═══════════════════════════════════════════════════════════
+async function renderReportAccidentSection() {
+    const uid = window._currentUser?.uid;
+    if (!uid) return;
+
+    // Pre-fill vehicle info and show insurance details from mulkiya
+    const banner = document.getElementById('accidentInsuranceBanner');
+    const preview = document.getElementById('accVehiclePreview');
+
+    try {
+        let mulkiya = window._activeVehicle || {};
+        if (!mulkiya.make) {
+            const vSnap = await window._fsGetDocs(
+                window._fsCollection(window._fbDb, 'users', uid, 'vehicles')
+            );
+            if (!vSnap.empty) mulkiya = vSnap.docs[0].data();
+        }
+
+        const vehicle = [mulkiya.make, mulkiya.bodyType, mulkiya.year]
+            .filter(v => v && v !== '—').join(' ') || 'Vehicle not found';
+        const insCompany = mulkiya.insuranceCompany || '—';
+        const insPolicy  = mulkiya.insurancePolicy  || '—';
+        const plate      = mulkiya.plateNumber      || '—';
+
+        if (preview) {
+            preview.innerHTML = `
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                    <div><span style="color:var(--td);display:block;font-size:0.7rem;">VEHICLE</span><strong style="color:var(--t);">${vehicle}</strong></div>
+                    <div><span style="color:var(--td);display:block;font-size:0.7rem;">PLATE</span><strong style="color:var(--t);">${plate}</strong></div>
+                    <div><span style="color:var(--td);display:block;font-size:0.7rem;">INSURANCE CO.</span><strong style="color:${insCompany !== '—' ? '#4ade80' : 'var(--red)'};">${insCompany}</strong></div>
+                    <div><span style="color:var(--td);display:block;font-size:0.7rem;">POLICY NO.</span><strong style="color:var(--t);font-family:'JetBrains Mono',monospace;">${insPolicy}</strong></div>
+                </div>`;
+        }
+
+        if (banner) {
+            if (insCompany !== '—') {
+                banner.style.display = 'block';
+                banner.textContent = `✓ Insurance detected: ${insCompany} · Policy ${insPolicy} — claim will be auto-routed`;
+            } else {
+                banner.style.display = 'block';
+                banner.style.color = '#ff8888';
+                banner.style.borderColor = 'rgba(255,68,68,0.3)';
+                banner.style.background = 'rgba(255,68,68,0.06)';
+                banner.textContent = '⚠ No insurance found in your Mulkiya — upload your Mulkiya in My Profile first';
+            }
+        }
+
+        // Set today's date as default
+        const dateEl = document.getElementById('accDate');
+        if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+        // Reset scan state
+        window._accidentScanData = null;
+        window._accidentImages = [];
+        const scanBtn = document.getElementById('btnAccidentScan');
+        if (scanBtn) scanBtn.style.display = 'none';
+        const scanBox = document.getElementById('accScanResultBox');
+        if (scanBox) scanBox.style.display = 'none';
+        const grid = document.getElementById('accImgPreviewGrid');
+        if (grid) grid.innerHTML = '';
+
+    } catch(e) {
+        console.warn('[ReportAccident]', e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ACCIDENT INSPECTION HELPERS
+// ═══════════════════════════════════════════════════════════
+window._accidentImages = [];
+window._accidentScanData = null;
+
+function handleAccidentFiles(files) {
+    const grid  = document.getElementById('accImgPreviewGrid');
+    const btn   = document.getElementById('btnAccidentScan');
+    const scanBox = document.getElementById('accScanResultBox');
+    if (!grid) return;
+
+    // Reset previous results
+    window._accidentImages   = [];
+    window._accidentScanData = null;
+    if (scanBox) scanBox.style.display = 'none';
+
+    grid.innerHTML = '';
+
+    Array.from(files).forEach(file => {
+        if (!file.type.startsWith('image/')) return;
+        window._accidentImages.push(file);
+        const reader = new FileReader();
+        reader.onload = e => {
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'position:relative;border-radius:8px;overflow:hidden;aspect-ratio:16/9;background:var(--bg4);';
+            wrap.innerHTML = `
+                <img src="${e.target.result}"
+                    style="width:100%;height:100%;object-fit:cover;">
+                <div style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,0.7);
+                    color:var(--tm);font-size:0.6rem;font-family:'JetBrains Mono',monospace;
+                    padding:2px 6px;border-radius:4px;">
+                    ${file.name.slice(0, 14)}
+                </div>`;
+            grid.appendChild(wrap);
+        };
+        reader.readAsDataURL(file);
+    });
+
+    if (btn) btn.style.display = window._accidentImages.length ? '' : 'none';
+}
+function handleAccidentDrop(event) {
+    event.preventDefault();
+    document.getElementById('accUploadZone').classList.remove('drag');
+    handleAccidentFiles(event.dataTransfer.files);
+}
+async function runAccidentInspection() {
+    if (!window._accidentImages || !window._accidentImages.length) {
+        return toast('Please upload accident photos first', 'error');
+    }
+
+    const btn = document.getElementById('btnAccidentScan');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner" style="display:inline-block;width:14px;height:14px;border-width:2px;vertical-align:middle;margin-right:6px;"></div> Running AI Inspection...';
+    }
+
+    // Reset state so report pipeline uses accident images
+    state = freshState();
+    state.files = window._accidentImages;
+    state._historySaved = false;
+
+    showScanOverlay(window._accidentImages);
+
+    const fd = new FormData();
+    window._accidentImages.forEach(f => fd.append('files', f));
+
+    // Vehicle info from mulkiya
+    const v = window._activeVehicle || {};
+    fd.append('vin',              v.vin      || '');
+    fd.append('make',             v.make     || '');
+    fd.append('model',            v.bodyType || '');
+    fd.append('year',             v.year     || '');
+    fd.append('mileage',          v.mileage  || '');
+    fd.append('inspection_type', 'accident');
+
+    try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 120000);
+
+        const res = await fetch(`${API}/inspect`, {
+            method: 'POST',
+            body: fd,
+            signal: controller.signal
+        }).catch(err => {
+            clearTimeout(tid);
+            if (err.name === 'AbortError') throw new Error('Analysis timed out — please try again');
+            throw err;
+        });
+        clearTimeout(tid);
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || 'Inspection failed');
+        }
+
+        const data = await res.json();
+
+        // ── Store into state exactly like runBatchInspection does ──
+        state.batchDefects   = data.defects_detected  || [];
+        state.batchEnriched  = data.defects_enriched  || [];
+        state.batchAnnotated = data.annotated_images  || [];
+        state.batchDone      = true;
+        state.crossedIndices = new Set();
+        state.audioResult    = null;
+
+        // Build perImageDefects like runBatchInspection
+        const allDef   = state.batchDefects;
+        const annotated = state.batchAnnotated;
+        state.perImageDefects = [];
+        const pic = annotated.length > 0 ? Math.ceil(allDef.length / annotated.length) : 0;
+        let di = 0;
+        for (let i = 0; i < window._accidentImages.length; i++) {
+            const mp = annotated.find(p => p.includes(`_${i}.`)) || null;
+            if (mp) {
+                state.perImageDefects.push({ defects: allDef.slice(di, di + pic), annotated: mp });
+                di += pic;
+            } else {
+                state.perImageDefects.push({ defects: [], annotated: null });
+            }
+        }
+
+        // Store on window for claim submission
+        window._accidentScanData = {
+            defectsFound:    data.unique_defect_types || 0,
+            defectDetails:   (data.defects_enriched || data.defects_detected || []).map(d => {
+                if (Array.isArray(d)) {
+                    const label = d[0] || 'Unknown';
+                    const conf  = d[1] || 0;
+                    return {
+                        label:         label,
+                        zone:          label.split(' — ')[0],
+                        severity:      label.includes(' — ') ? label.split(' — ')[1] : (conf >= 80 ? 'Severe' : conf >= 55 ? 'Moderate' : 'Minor'),
+                        severity_tier: conf >= 80 ? 'severe' : conf >= 55 ? 'moderate' : 'minor',
+                        confidence:    conf,
+                    };
+                }
+                return {
+                    label:         d.label || d.part || 'Unknown',
+                    zone:          (d.label || d.part || 'Unknown').split(' — ')[0],
+                    severity:      d.severity_class || d.severity_tier || 'Moderate',
+                    severity_tier: d.severity_tier || 'moderate',
+                    confidence:    d.confidence || 0,
+                };
+            }),
+            defectsRaw:      data.defects_detected || [],
+            annotatedImages: data.annotated_images || [],
+            aiAnalysis:      data.ai_analysis || null,
+            overallStatus:   data.overall_status || 'ATTENTION',
+            timestamp:       Date.now(),
+        };
+
+        hideScanOverlay();
+
+        // ── Show result box ──
+        const box     = document.getElementById('accScanResultBox');
+        const summary = document.getElementById('accScanSummary');
+        if (box) box.style.display = '';
+
+        const uniqueTypes  = data.unique_defect_types || 0;
+        const aiSummaryTxt = data.ai_analysis?.summary || '';
+        const healthScore  = data.ai_analysis?.health_score || null;
+        const riskLevel    = data.ai_analysis?.risk_level || null;
+
+        // Build defect lines from real data
+        const defectLines = window._accidentScanData.defectDetails
+            .slice(0, 10)
+            .map(d => {
+                const conf  = typeof d.confidence === 'number' ? d.confidence.toFixed(1) : d.confidence;
+                const color = d.severity_tier === 'severe' ? '#ff7777' : d.severity_tier === 'moderate' ? '#f59e0b' : '#4ade80';
+                return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;">
+                    <span style="color:${color};font-size:0.7rem;">▸</span>
+                    <span style="color:var(--t);font-weight:600;">${d.zone || d.label}</span>
+                    <span style="color:var(--tm);font-size:0.78rem;">— ${d.severity}</span>
+                    <span style="color:var(--td);font-size:0.72rem;font-family:'JetBrains Mono',monospace;">(${conf}% confidence)</span>
+                </div>`;
+            }).join('');
+
+        if (summary) {
+            summary.innerHTML = `
+                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+                    <div>
+                        <div style="font-weight:800;font-size:1rem;color:#4ade80;margin-bottom:2px;">
+                            ✅ ${uniqueTypes} damage area${uniqueTypes !== 1 ? 's' : ''} detected
+                        </div>
+                        <div style="font-size:0.72rem;color:var(--tm);font-family:'JetBrains Mono',monospace;">
+                            Powered by dual AI models — part detection + severity classification
+                        </div>
+                    </div>
+                    ${healthScore !== null ? `
+                    <div style="text-align:center;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;padding:10px 18px;">
+                        <div style="font-size:1.4rem;font-weight:800;font-family:'JetBrains Mono',monospace;
+                            color:${healthScore >= 75 ? '#4ade80' : healthScore >= 50 ? '#f59e0b' : '#ff4444'};">
+                            ${healthScore}<span style="font-size:0.9rem;opacity:0.6">/100</span>
+                        </div>
+                        <div style="font-size:0.62rem;color:var(--tm);text-transform:uppercase;letter-spacing:0.1em;">Health Score</div>
+                        ${riskLevel ? `<div style="font-size:0.65rem;color:${riskLevel === 'Low' ? '#4ade80' : riskLevel === 'Medium' ? '#f59e0b' : '#ff4444'};font-weight:700;margin-top:2px;">${riskLevel} Risk</div>` : ''}
+                    </div>` : ''}
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:${aiSummaryTxt ? '14px' : '0'};">
+                    ${defectLines || '<div style="color:var(--tm);font-size:0.85rem;">No damage detected in uploaded images.</div>'}
+                </div>
+
+                ${aiSummaryTxt ? `
+                <div style="padding:12px 14px;background:rgba(138,181,202,0.06);border:1px solid rgba(138,181,202,0.15);border-radius:8px;font-size:0.82rem;color:var(--tm);line-height:1.6;font-style:italic;">
+                    <span style="color:var(--ca);font-weight:700;font-style:normal;font-family:'JetBrains Mono',monospace;font-size:0.68rem;">✦ AI SUMMARY — </span>
+                    ${aiSummaryTxt}
+                </div>` : ''}
+            `;
+        }
+
+        // Show annotated images
+        const imgGrid = document.getElementById('accImgPreviewGrid');
+        if (imgGrid && data.annotated_images && data.annotated_images.length) {
+            const ts = Date.now();
+            imgGrid.innerHTML = data.annotated_images.map((p, i) => `
+                <div style="position:relative;border-radius:8px;overflow:hidden;aspect-ratio:16/9;background:var(--bg4);">
+                    <img src="${API}/${p}?t=${ts}" alt="Annotated ${i+1}"
+                        style="width:100%;height:100%;object-fit:cover;"
+                        onerror="this.style.opacity='0.3'">
+                    <div style="position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,0.75);
+                        color:#4ade80;font-size:0.58rem;font-weight:800;padding:2px 6px;
+                        border-radius:4px;font-family:'JetBrains Mono',monospace;">
+                        ANNOTATED
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Save to inspection history (accident type)
+        _garageServiceType = 'accident';
+        await saveInspectionToHistory(data);
+
+        toast(`✅ AI scan complete — ${uniqueTypes} damage area${uniqueTypes !== 1 ? 's' : ''} detected`, 'success');
+
+    } catch(e) {
+        hideScanOverlay();
+        console.error('[AccidentInspection]', e);
+        toast(e.message || 'Inspection failed — please try again', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg> Re-run AI Inspection`;
+        }
+    }
+}
+async function enableAccidentLocation() {
+    const statusEl = document.getElementById('accLocationStatus');
+    const box      = document.getElementById('accNearbyGaragesBox');
+    const garageInput = document.getElementById('accGarage');
+    if (statusEl) statusEl.textContent = '📍 Getting location...';
+    if (!navigator.geolocation) {
+        if (statusEl) statusEl.textContent = 'Geolocation not supported';
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        if (statusEl) statusEl.textContent = `📍 Location found — searching nearby garages...`;
+
+        // Show map iframe
+        if (box) {
+            box.style.display = '';
+            box.innerHTML = `<div style="padding:8px;background:var(--bg3);">
+                <div style="font-size:0.75rem;color:var(--tm);font-family:'JetBrains Mono',monospace;margin-bottom:8px;">📍 Nearby garages (tap to select)</div>
+                <div id="accGarageList" style="display:flex;flex-direction:column;gap:6px;"></div>
+                <iframe src="https://www.openstreetmap.org/export/embed.html?bbox=${lng-0.02},${lat-0.02},${lng+0.02},${lat+0.02}&amp;layer=mapnik&amp;marker=${lat},${lng}" style="width:100%;height:160px;border:none;border-radius:8px;margin-top:10px;" title="Map"></iframe>
+            </div>`;
+        }
+
+        // Fetch MEHRA garages from Firestore
+        try {
+            const snap = await window._fsGetDocs(window._fsCollection(window._fbDb, 'users'));
+            const garages = [];
+            for (const d of snap.docs) {
+                try {
+                    const gSnap = await window._fsGetDoc(window._fsDoc(window._fbDb, 'users', d.id, 'profile', 'garage'));
+                    if (gSnap.exists()) {
+                        const g = gSnap.data();
+                        if (g.name) garages.push(g);
+                    }
+                } catch(e) {}
+            }
+
+            const listEl = document.getElementById('accGarageList');
+            if (listEl) {
+                if (garages.length) {
+                    listEl.innerHTML = garages.map((g, i) =>
+                        `<div onclick="document.getElementById('accGarage').value='${(g.name||'').replace(/'/g, "\\'")} — ${g.city||''}';document.getElementById('accNearbyGaragesBox').style.display='none';"
+                            style="padding:10px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:0.82rem;display:flex;justify-content:space-between;align-items:center;"
+                            onmouseover="this.style.borderColor='var(--c)'" onmouseout="this.style.borderColor='var(--border)'">
+                            <div>
+                                <div style="font-weight:700;color:var(--t);">${g.name || 'Unnamed'}</div>
+                                <div style="color:var(--tm);font-family:'JetBrains Mono',monospace;font-size:0.72rem;">${g.city || ''} ${g.address ? '· ' + g.address : ''}</div>
+                            </div>
+                            <span style="color:var(--c);font-size:0.75rem;font-weight:700;">Select →</span>
+                        </div>`
+                    ).join('');
+                } else {
+                    listEl.innerHTML = '<div style="padding:10px;color:var(--tm);font-size:0.8rem;">No MEHRA-registered garages found. Type a garage name manually below.</div>';
+                }
+            }
+            if (statusEl) statusEl.textContent = `📍 ${garages.length} nearby garage${garages.length !== 1 ? 's' : ''} found — tap to select`;
+        } catch(e) {
+            if (statusEl) statusEl.textContent = '⚠️ Could not load garages — type name manually';
+        }
+    }, () => {
+        if (statusEl) statusEl.textContent = '⚠️ Location access denied — type garage name manually';
+    });
+}
+async function submitOwnerAccidentClaim() {
+    const uid = window._currentUser?.uid;
+    if (!uid) return toast('Please log in first', 'error');
+
+    if (!window._accidentScanData) {
+        return toast('Please run the AI inspection first (Step 1)', 'error');
+    }
+
+    const garage   = document.getElementById('accGarage').value.trim();
+    const date     = document.getElementById('accDate').value;
+    const location = document.getElementById('accLocation').value.trim();
+
+    if (!garage) return toast('Please select or enter a garage / repair centre name', 'error');
+
+    const btn = document.querySelector('[onclick="submitOwnerAccidentClaim()"]');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating PDF & Submitting...'; }
+
+    try {
+        let mulkiya = window._activeVehicle || {};
+        if (!mulkiya.make) {
+            try {
+                const vSnap = await window._fsGetDocs(
+                    window._fsCollection(window._fbDb, 'users', uid, 'vehicles')
+                );
+                if (!vSnap.empty) mulkiya = vSnap.docs[0].data();
+            } catch(e) {}
+        }
+
+        const insCompany = mulkiya.insuranceCompany || '—';
+        const insPolicy  = mulkiya.insurancePolicy  || '—';
+        const vehicle    = [mulkiya.make, mulkiya.bodyType, mulkiya.year]
+            .filter(v => v && v !== '—').join(' ') || '—';
+        const plate      = mulkiya.plateNumber || '—';
+
+        let ownerName = window._currentUser.email;
+        try {
+            const meta = await window._fsGetDoc(
+                window._fsDoc(window._fbDb, 'users', uid, 'profile', 'meta')
+            );
+            if (meta.exists() && meta.data().owner) {
+                const o = meta.data().owner;
+                ownerName = [o.firstName, o.lastName].filter(Boolean).join(' ') || ownerName;
+            }
+        } catch(e) {}
+
+        // ── Generate real PDF via report.py pipeline ──────────────────────────
+        let accidentPdfUrl = null;
+        try {
+            // Build the payload exactly like generateReport() does
+            const rawDefects = window._accidentScanData.defectsRaw || [];
+            const annotated  = window._accidentScanData.annotatedImages || [];
+
+            // Use state.batchAnnotated if available (set by runAccidentInspection)
+            const annotatedForReport = (state.batchAnnotated && state.batchAnnotated.length)
+                ? state.batchAnnotated
+                : annotated;
+
+            const payload = {
+                defects_detected:    rawDefects,
+                annotated_images:    annotatedForReport,
+                image_count:         (window._accidentImages || []).length,
+                unique_defect_types: window._accidentScanData.defectsFound || 0,
+                vehicle_info: {
+                    vin:     mulkiya.vin      || 'Not Provided',
+                    make:    mulkiya.make     || 'Not Provided',
+                    model:   mulkiya.bodyType || 'Not Provided',
+                    year:    mulkiya.year     || 'Not Provided',
+                    mileage: mulkiya.mileage  || 'Not Provided',
+                },
+                engine_result: null,   // no engine audio in accident flow
+                inspection_type: 'accident',
+            };
+
+            const reportRes = await fetch(`${API}/generate-report`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (reportRes.ok) {
+                accidentPdfUrl = `${API}/report`;
+                toast('✅ Accident PDF report generated', 'success');
+            } else {
+                console.warn('[AccidentPDF] generation failed — claim will proceed without PDF');
+            }
+        } catch(e) {
+            console.warn('[AccidentPDF] error:', e);
+        }
+
+        // ── Build claim description from real AI data ──────────────────────────
+        const defectDescription = (window._accidentScanData.defectDetails || [])
+            .map(d => {
+                const label = d.label || d.zone || 'Unknown';
+                const sev   = d.severity || d.severity_tier || 'Moderate';
+                const conf  = typeof d.confidence === 'number' ? d.confidence.toFixed(1) : d.confidence;
+                return `${label}: ${sev} (${conf}% confidence)`;
+            }).join('; ') || 'No detailed defects recorded';
+
+        const aiSummary = window._accidentScanData.aiAnalysis?.summary || '';
+        const fullDescription = aiSummary
+            ? `${aiSummary}\n\nDetected damage: ${defectDescription}`
+            : defectDescription;
+
+        // ── Save claim to Firestore ────────────────────────────────────────────
+        const claimId = 'claim_owner_' + Date.now();
+        const claim = {
+            id:               claimId,
+            source:           'owner_self_report',
+            status:           'pending',
+            ownerId:          uid,
+            ownerName,
+            ownerEmail:       window._currentUser.email || '',
+            vehicle,
+            plate,
+            mulkiya,
+            insuranceCompany: insCompany,
+            policyNo:         insPolicy,
+            garageName:       garage,
+            incidentDate:     date,
+            incidentLocation: location,
+            description:      fullDescription,
+            aiScanData: {
+                defectsFound:    window._accidentScanData.defectsFound,
+                healthScore:     window._accidentScanData.aiAnalysis?.health_score || null,
+                riskLevel:       window._accidentScanData.aiAnalysis?.risk_level   || null,
+                overallStatus:   window._accidentScanData.overallStatus || 'ATTENTION',
+                annotatedImages: window._accidentScanData.annotatedImages || [],
+                defectDetails:   window._accidentScanData.defectDetails   || [],
+            },
+            accidentPdfUrl:   accidentPdfUrl,
+            createdAt:        new Date().toLocaleDateString(),
+            timestamp:        Date.now(),
+        };
+
+        await window._fsSetDoc(
+            window._fsDoc(window._fbDb, 'insuranceClaims', claimId), claim
+        );
+
+        // ── Notify owner ───────────────────────────────────────────────────────
+        const pdfLink = accidentPdfUrl
+            ? ` <a href="${accidentPdfUrl}" target="_blank" style="color:var(--c);font-weight:700;">📄 Download PDF Report</a>`
+            : '';
+
+        await notifyUser(uid,
+            `🛡️ Accident claim submitted to <strong>${insCompany}</strong>. ` +
+            `Policy: ${insPolicy}. Vehicle: ${vehicle}.${pdfLink} Awaiting insurer review.`,
+            'confirmed'
+        );
+
+        // ── Notify insurer ─────────────────────────────────────────────────────
+        if (insCompany !== '—') {
+            await notifyGarage(
+                insCompany,
+                `🚨 <strong>New Accident Claim</strong> from ${ownerName} ` +
+                `(${vehicle}, Plate: ${plate}). ` +
+                `Policy: ${insPolicy} · Garage: ${garage} · Date: ${date}. ` +
+                `AI: ${window._accidentScanData.defectsFound} damage area(s) detected` +
+                `${window._accidentScanData.aiAnalysis?.health_score !== undefined
+                    ? `, Health Score: ${window._accidentScanData.aiAnalysis.health_score}/100` : ''}.` +
+                `${accidentPdfUrl ? ` <a href="${accidentPdfUrl}">View PDF</a>` : ''}`,
+                'claim_received',
+                claimId
+            );
+        }
+
+        toast(`✅ Claim submitted to ${insCompany} — PDF sent to insurer`, 'success');
+
+        // ── Reset form ─────────────────────────────────────────────────────────
+        window._accidentScanData = null;
+        window._accidentImages   = [];
+        state = freshState();
+
+        ['accGarage', 'accLocation'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+
+        const grid = document.getElementById('accImgPreviewGrid');
+        if (grid) grid.innerHTML = '';
+
+        const scanBox = document.getElementById('accScanResultBox');
+        if (scanBox) scanBox.style.display = 'none';
+
+        const nearbyBox = document.getElementById('accNearbyGaragesBox');
+        if (nearbyBox) nearbyBox.style.display = 'none';
+
+        const scanBtn = document.getElementById('btnAccidentScan');
+        if (scanBtn) scanBtn.style.display = 'none';
+
+        const accFileInput = document.getElementById('accFileInput');
+        if (accFileInput) accFileInput.value = '';
+
+        setTimeout(() => portalGoTo('myClaims'), 1200);
+
+    } catch(e) {
+        console.error('[OwnerClaim]', e);
+        toast('Failed to submit claim: ' + e.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg> Submit Insurance Claim & Send PDF to Insurer`;
+        }
+    }
+}
+async function renderOwnerClaims() {
+    const list = document.getElementById('ownerClaimsList');
+    if (!list) return;
+    const uid = window._currentUser?.uid;
+    if (!uid) return;
+
+    list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--tm)"><div class="spinner" style="margin:0 auto 12px"></div>Loading...</div>';
+
+    try {
+        const snap = await window._fsGetDocs(window._fsCollection(window._fbDb, 'insuranceClaims'));
+        const claims = snap.docs.map(d => d.data())
+            .filter(c => c.ownerId === uid)
+            .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+        if (!claims.length) {
+            list.innerHTML = '<div style="text-align:center;padding:60px;color:var(--tm)"><div style="font-size:2.5rem;margin-bottom:12px">🛡️</div>No claims yet — report an accident to get started.</div>';
+            return;
+        }
+
+        list.innerHTML = claims.map(c => {
+             const sc = c.status === 'approved' ? '#4ade80' : c.status === 'rejected' ? '#ff4444' : '#f59e0b';
+    const icon = c.status === 'approved' ? '✅' : c.status === 'rejected' ? '❌' : '⏳';
+
+    const aiData = c.aiScanData || {};
+    const healthScore = aiData.healthScore || aiData.health_score || null;
+    const riskLevel   = aiData.riskLevel   || aiData.risk_level   || null;
+    const defectCount = aiData.defectsFound || 0;
+    const overallStatus = aiData.overallStatus || '—';
+
+    const statusColor = overallStatus === 'PASS' ? '#4ade80'
+        : overallStatus === 'FAIL' ? '#ff4444' : '#f59e0b';
+
+    const defectRows = (aiData.defectDetails || []).slice(0, 6).map(d => {
+        const label = d.label || d.zone || 'Unknown';
+        const sev   = d.severity || d.severity_tier || '—';
+        const conf  = typeof d.confidence === 'number' ? d.confidence.toFixed(1) : (d.confidence || '—');
+        const sevColor = (d.severity_tier || sev || '').toLowerCase().includes('severe')
+            ? '#ff7777'
+            : (d.severity_tier || sev || '').toLowerCase().includes('moderate')
+            ? '#f59e0b' : '#4ade80';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.78rem;">
+            <span style="color:var(--t);font-weight:600;">${label}</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span style="color:${sevColor};font-size:0.7rem;font-weight:700;">${sev}</span>
+                <span style="color:var(--td);font-family:'JetBrains Mono',monospace;font-size:0.7rem;">${conf}%</span>
+            </div>
+        </div>`;
+    }).join('');
+
+    const pdfBtn = c.accidentPdfUrl
+        ? `<a href="${c.accidentPdfUrl}" target="_blank"
+            style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;
+            background:rgba(200,216,228,0.08);border:1px solid rgba(200,216,228,0.25);
+            border-radius:8px;color:var(--c);font-size:0.78rem;font-weight:700;
+            text-decoration:none;font-family:'Syne',sans-serif;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+            </svg>View AI Accident Report PDF
+          </a>`
+        : '';
+
+    return `<div style="background:var(--bg3);border:1px solid var(--border);
+        border-left:4px solid ${sc};border-radius:14px;padding:20px 22px;margin-bottom:14px;">
+
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+            <div>
+                <div style="font-weight:800;font-size:1rem;color:var(--t);">
+                    ${c.garageName || '—'}
+                </div>
+                <div style="font-size:0.75rem;color:var(--tm);font-family:'JetBrains Mono',monospace;margin-top:2px;">
+                    ${c.insuranceCompany || '—'} · Policy: ${c.policyNo || '—'} · ${c.createdAt || '—'}
+                </div>
+            </div>
+            <span style="background:${sc}20;color:${sc};padding:5px 14px;border-radius:20px;
+                font-size:0.7rem;font-weight:800;border:1px solid ${sc}40;
+                font-family:'JetBrains Mono',monospace;">
+                ${icon} ${(c.status || 'pending').toUpperCase()}
+            </span>
+        </div>
+
+        <!-- AI Scan Summary Bar -->
+        ${defectCount > 0 || healthScore !== null ? `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
+            <div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
+                <div style="font-size:1.2rem;font-weight:800;font-family:'JetBrains Mono',monospace;
+                    color:${statusColor};">${overallStatus}</div>
+                <div style="font-size:0.62rem;color:var(--tm);text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">AI Verdict</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
+                <div style="font-size:1.2rem;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--c);">${defectCount}</div>
+                <div style="font-size:0.62rem;color:var(--tm);text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">Damage Areas</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
+                <div style="font-size:1.2rem;font-weight:800;font-family:'JetBrains Mono',monospace;
+                    color:${healthScore !== null ? (healthScore >= 75 ? '#4ade80' : healthScore >= 50 ? '#f59e0b' : '#ff4444') : 'var(--td)'};">
+                    ${healthScore !== null ? healthScore + '/100' : '—'}
+                </div>
+                <div style="font-size:0.62rem;color:var(--tm);text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">Health Score</div>
+            </div>
+        </div>` : ''}
+
+        <!-- Defect breakdown -->
+        ${defectRows ? `
+        <div style="background:rgba(255,255,255,0.025);border:1px solid var(--border);border-radius:8px;
+            padding:10px 14px;margin-bottom:14px;">
+            <div style="font-size:0.65rem;color:var(--td);text-transform:uppercase;
+                letter-spacing:0.1em;font-family:'JetBrains Mono',monospace;margin-bottom:8px;">
+                Detected Damage
+            </div>
+            ${defectRows}
+        </div>` : ''}
+
+        <!-- Description -->
+        ${c.description ? `
+        <div style="font-size:0.82rem;color:var(--tm);margin-bottom:12px;
+            padding:10px 14px;background:rgba(255,255,255,0.02);border-radius:8px;
+            line-height:1.6;border:1px solid rgba(255,255,255,0.04);">
+            ${c.description.split('\n\nDetected damage:')[0]}
+        </div>` : ''}
+
+        ${c.approvedAmount ? `
+        <div style="margin-bottom:10px;color:#4ade80;font-weight:700;font-size:0.85rem;">
+            ✅ AED ${c.approvedAmount} authorized by insurer
+        </div>` : ''}
+
+        ${c.status === 'rejected' ? `
+        <div style="margin-bottom:10px;color:#ff8888;font-size:0.82rem;
+            padding:8px 12px;background:rgba(255,68,68,0.06);border-radius:8px;">
+            Contact your insurer for details on the rejection.
+        </div>` : ''}
+
+        <!-- PDF button -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+            ${pdfBtn}
+        </div>
+    </div>`;
+        }).join('');
+    } catch(e) {
+        list.innerHTML = '<div style="padding:20px;color:var(--tm)">Failed to load claims.</div>';
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// GARAGE: Walk-in Claim
+// ═══════════════════════════════════════════════════════════
+window._wiFoundOwner = null;
+
+async function lookupVehicleOwner() {
+    const plate = document.getElementById('wiPlate').value.trim();
+    const vin   = document.getElementById('wiVin').value.trim();
+
+    if (!plate && !vin) return toast('Enter a plate number or VIN to search', 'error');
+
+    const btn = document.querySelector('[onclick="lookupVehicleOwner()"]');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Searching...'; }
+
+    const resultDiv = document.getElementById('wiOwnerResult');
+    const claimForm = document.getElementById('wiClaimForm');
+    resultDiv.style.display = 'none';
+    claimForm.style.display = 'none';
+    window._wiFoundOwner = null;
+
+    try {
+        const usersSnap = await window._fsGetDocs(window._fsCollection(window._fbDb, 'users'));
+        let foundUid = null;
+        let foundVehicle = null;
+        let foundMulkiya = null;
+
+        for (const userDoc of usersSnap.docs) {
+            try {
+                // Check vehicles subcollection
+                const vSnap = await window._fsGetDocs(
+                    window._fsCollection(window._fbDb, 'users', userDoc.id, 'vehicles')
+                );
+                for (const vDoc of vSnap.docs) {
+                    const v = vDoc.data();
+                    const vPlate = (v.plateNumber || '').replace(/\s/g,'').toLowerCase();
+                    const vVin   = (v.vin || '').toLowerCase();
+                    const sPlate = plate.replace(/\s/g,'').toLowerCase();
+                    const sVin   = vin.toLowerCase();
+
+                    if ((sPlate && (vPlate === sPlate || vPlate.includes(sPlate))) ||
+                        (sVin   && (vVin   === sVin   || vVin.includes(sVin)))) {
+                        foundUid     = userDoc.id;
+                        foundVehicle = v;
+                        foundMulkiya = v;
+                        break;
+                    }
+                }
+                if (foundUid) break;
+
+                // Fallback: legacy mulkiya
+                const mSnap = await window._fsGetDoc(
+                    window._fsDoc(window._fbDb, 'users', userDoc.id, 'profile', 'mulkiya')
+                );
+                if (mSnap.exists()) {
+                    const m = mSnap.data();
+                    const vPlate = (m.plateNumber || '').replace(/\s/g,'').toLowerCase();
+                    const vVin   = (m.vin || '').toLowerCase();
+                    const sPlate = plate.replace(/\s/g,'').toLowerCase();
+                    const sVin   = vin.toLowerCase();
+
+                    if ((sPlate && (vPlate === sPlate || vPlate.includes(sPlate))) ||
+                        (sVin   && (vVin   === sVin   || vVin.includes(sVin)))) {
+                        foundUid     = userDoc.id;
+                        foundMulkiya = m;
+                        foundVehicle = m;
+                        break;
+                    }
+                }
+            } catch(e) {}
+        }
+
+        if (!foundUid || !foundMulkiya) {
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `<div style="color:var(--red);padding:16px;">
+                ⚠️ No MEHRA-registered owner found for plate <strong>${plate || vin}</strong>.
+                <br><br>
+                <p style="color:var(--tm);font-size:0.85rem;">You can still create a manual claim below by entering owner details.</p>
+                <button class="btn btn-ghost" style="margin-top:12px;" onclick="showManualWalkinForm('${plate}')">Create Manual Claim →</button>
+            </div>`;
+            return;
+        }
+
+        const m = foundMulkiya;
+        const vehicle    = [m.make, m.bodyType, m.year].filter(v => v && v !== '—').join(' ') || '—';
+        const insCompany = m.insuranceCompany || '—';
+        const insPolicy  = m.insurancePolicy  || '—';
+
+        window._wiFoundOwner = { uid: foundUid, mulkiya: m, vehicle, insCompany, insPolicy };
+
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `
+            <h3 style="margin-bottom:14px;">✓ Owner Found</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:0.85rem;margin-bottom:16px;">
+                <div><span style="color:var(--tm);display:block;font-size:0.7rem;">OWNER</span><strong>${m.ownerName || '—'}</strong></div>
+                <div><span style="color:var(--tm);display:block;font-size:0.7rem;">VEHICLE</span><strong>${vehicle}</strong></div>
+                <div><span style="color:var(--tm);display:block;font-size:0.7rem;">PLATE</span><strong style="font-family:'JetBrains Mono',monospace;">${m.plateNumber || plate}</strong></div>
+                <div><span style="color:var(--tm);display:block;font-size:0.7rem;">VIN</span><strong style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;">${m.vin || '—'}</strong></div>
+                <div><span style="color:var(--tm);display:block;font-size:0.7rem;">INSURANCE CO.</span>
+                    <strong style="color:${insCompany !== '—' ? '#4ade80' : '#ff8888'};">${insCompany}</strong>
+                </div>
+                <div><span style="color:var(--tm);display:block;font-size:0.7rem;">POLICY NO.</span><strong style="font-family:'JetBrains Mono',monospace;">${insPolicy}</strong></div>
+            </div>
+            <button class="btn btn-primary" onclick="showWalkinClaimForm()">
+                🛡️ Proceed to Create Claim
+            </button>`;
+
+        // Pre-fill insurance banner
+        const insBanner = document.getElementById('wiInsuranceBanner');
+        if (insBanner) {
+            insBanner.textContent = insCompany !== '—'
+                ? `✓ Insurance: ${insCompany} · Policy: ${insPolicy} — claim will be routed here`
+                : '⚠ No insurance on record — manual insurer entry required';
+            insBanner.style.color = insCompany !== '—' ? '#4ade80' : '#ff8888';
+        }
+
+        // Set default incident date to today
+        const dateEl = document.getElementById('wiIncidentDate');
+        if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+
+    } catch(e) {
+        console.error('[LookupOwner]', e);
+        toast('Search failed: ' + e.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search Owner'; }
+    }
+}
+
+function showWalkinClaimForm() {
+    document.getElementById('wiClaimForm').style.display = 'block';
+    document.getElementById('wiClaimForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function showManualWalkinForm(plate) {
+    const claimForm = document.getElementById('wiClaimForm');
+    claimForm.style.display = 'block';
+    const banner = document.getElementById('wiInsuranceBanner');
+    if (banner) {
+        banner.textContent = `Manual claim for plate: ${plate} — no MEHRA account found`;
+        banner.style.color = '#f59e0b';
+    }
+    claimForm.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function submitWalkinClaim() {
+    const uid = window._currentUser?.uid;
+    if (!uid) return toast('Not logged in', 'error');
+
+    const desc     = document.getElementById('wiDamageDesc').value.trim();
+    const estCost  = document.getElementById('wiEstCost').value;
+    const incDate  = document.getElementById('wiIncidentDate').value;
+
+    if (!desc) return toast('Please describe the damage', 'error');
+
+    const btn = document.querySelector('[onclick="submitWalkinClaim()"]');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Submitting...'; }
+
+    try {
+        // Get garage profile
+        let garageProfile = window._garageProfile || {};
+        if (!garageProfile.name) {
+            const gSnap = await window._fsGetDoc(
+                window._fsDoc(window._fbDb, 'users', uid, 'profile', 'garage')
+            );
+            if (gSnap.exists()) garageProfile = gSnap.data();
+        }
+
+        const owner   = window._wiFoundOwner;
+        const mulkiya = owner?.mulkiya || {};
+        const insCompany = owner?.insCompany || mulkiya.insuranceCompany || '—';
+        const insPolicy  = owner?.insPolicy  || mulkiya.insurancePolicy  || '—';
+
+        const claimId = 'claim_walkin_' + Date.now();
+        const claim = {
+            id:               claimId,
+            source:           'garage_walkin',
+            status:           'pending',
+            ownerId:          owner?.uid || null,
+            ownerName:        mulkiya.ownerName || 'Walk-in Customer',
+            ownerEmail:       '',
+            vehicle:          owner?.vehicle || mulkiya.plateNumber || 'Unknown',
+            mulkiya,
+            insuranceCompany: insCompany,
+            policyNo:         insPolicy,
+            garageName:       garageProfile.name || 'Garage',
+            garageAddress:    garageProfile.address || '',
+            description:      desc,
+            estimatedCost:    estCost || '—',
+            incidentDate:     incDate,
+            createdAt:        new Date().toLocaleDateString(),
+            timestamp:        Date.now(),
+            garageUid:        uid,
+        };
+
+        await window._fsSetDoc(
+            window._fsDoc(window._fbDb, 'insuranceClaims', claimId), claim
+        );
+
+        // Notify owner if found in system
+        if (owner?.uid) {
+            await notifyUser(
+                owner.uid,
+                `🛡️ A garage claim was created for your vehicle at <strong>${garageProfile.name || 'a garage'}</strong>. ` +
+                `Claim submitted to <strong>${insCompany}</strong> · Policy: ${insPolicy}. Awaiting insurer review.`,
+                'confirmed'
+            );
+        }
+
+        // Notify the insurer's portal (via garageNotifications so insurance can pick it up)
+        if (insCompany !== '—') {
+            await notifyGarage(
+                insCompany,
+                `🚨 Walk-in claim submitted by ${garageProfile.name || 'garage'} for ${mulkiya.ownerName || 'customer'} ` +
+                `(${owner?.vehicle || '—'}). Policy: ${insPolicy}. Estimated repair: AED ${estCost || '—'}.`,
+                'pending',
+                claimId
+            );
+        }
+
+        toast(`✓ Claim submitted to ${insCompany}`, 'success');
+
+        // Reset form
+        ['wiPlate','wiVin','wiDamageDesc','wiEstCost'].forEach(id => {
+            const el = document.getElementById(id); if (el) el.value = '';
+        });
+        document.getElementById('wiOwnerResult').style.display = 'none';
+        document.getElementById('wiClaimForm').style.display = 'none';
+        window._wiFoundOwner = null;
+
+        // Navigate to claim history
+        setTimeout(() => portalGoTo('claimHistory'), 1000);
+
+    } catch(e) {
+        console.error('[WalkinClaim]', e);
+        toast('Failed to submit: ' + e.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Submit Claim to Insurance'; }
+    }
+}
+
+async function renderGarageClaimHistory() {
+    const list = document.getElementById('garageClaimHistoryList');
+    if (!list) return;
+    const uid = window._currentUser?.uid;
+    if (!uid) return;
+
+    let garageProfile = window._garageProfile || {};
+    if (!garageProfile.name) {
+        try {
+            const snap = await window._fsGetDoc(
+                window._fsDoc(window._fbDb, 'users', uid, 'profile', 'garage')
+            );
+            if (snap.exists()) garageProfile = snap.data();
+        } catch(e) {}
+    }
+
+    const myName = (garageProfile.name || '').trim();
+    if (!myName) {
+        list.innerHTML = '<div style="padding:20px;color:var(--tm)">Complete your Garage Profile first.</div>';
+        return;
+    }
+
+    try {
+        const snap = await window._fsGetDocs(window._fsCollection(window._fbDb, 'insuranceClaims'));
+        const claims = snap.docs.map(d => d.data())
+            .filter(c => fuzzyMatch(c.garageName || '', myName) || c.garageUid === uid)
+            .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+        if (!claims.length) {
+            list.innerHTML = '<div style="text-align:center;padding:60px;color:var(--tm)"><div style="font-size:2.5rem;margin-bottom:12px">📋</div>No claims submitted yet.</div>';
+            return;
+        }
+
+        list.innerHTML = claims.map(c => {
+            const sc = c.status === 'approved' ? '#4ade80' : c.status === 'rejected' ? '#ff4444' : '#f59e0b';
+            const src = c.source === 'garage_walkin' ? '🚶 Walk-in' : c.source === 'owner_self_report' ? '👤 Owner' : '📅 Booking';
+            return `<div style="background:var(--bg3);border:1px solid var(--border);border-left:4px solid ${sc};border-radius:14px;padding:18px 20px;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+                    <div>
+                        <div style="font-weight:800;color:var(--t);">${c.ownerName || '—'} — ${c.vehicle || '—'}</div>
+                        <div style="font-size:0.75rem;color:var(--tm);font-family:'JetBrains Mono',monospace;">
+                            ${src} · ${c.insuranceCompany || '—'} · Policy: ${c.policyNo || '—'} · ${c.createdAt || '—'}
+                        </div>
+                    </div>
+                    <span style="background:${sc}20;color:${sc};padding:4px 12px;border-radius:20px;font-size:0.7rem;font-weight:800;border:1px solid ${sc}40;">
+                        ${c.status.toUpperCase()}${c.approvedAmount ? ' — AED ' + c.approvedAmount : ''}
+                    </span>
+                </div>
+                ${c.description ? `<div style="margin-top:8px;font-size:0.8rem;color:var(--td);">📝 ${c.description}</div>` : ''}
+                ${c.estimatedCost && c.estimatedCost !== '—' ? `<div style="margin-top:4px;font-size:0.8rem;color:var(--tm);">Est. cost: AED ${c.estimatedCost}</div>` : ''}
+            </div>`;
+        }).join('');
+    } catch(e) {
+        list.innerHTML = '<div style="padding:20px;color:var(--tm)">Failed to load claim history.</div>';
+    }
+}
+// ═══════════════════════════════════════════════════════════
 // FIX 7: Render Policy Holders for insurance role
 // ═══════════════════════════════════════════════════════════
 async function renderInsPolicyHolders() {
@@ -9670,6 +10782,89 @@ async function renderInsPolicyHolders() {
 
     </script>
 
+
+    <script>
+        (() => {
+            const motionTargets = '.role-card,.mode-select-card,.upload-zone,.portal-card,.dash-card,.profile-card,.hero';
+            const revealTargets = '.role-card,.mode-select-card,.res-stat-card,.profile-card,.portal-card,.dash-card,.audio-file-card';
+
+            function setPointerGlow(event) {
+                const rect = event.currentTarget.getBoundingClientRect();
+                const x = ((event.clientX - rect.left) / rect.width) * 100;
+                const y = ((event.clientY - rect.top) / rect.height) * 100;
+                event.currentTarget.style.setProperty('--mx', `${x}%`);
+                event.currentTarget.style.setProperty('--my', `${y}%`);
+            }
+
+            function attachPointerGlow(root = document) {
+                root.querySelectorAll(motionTargets).forEach(el => {
+                    if (el.dataset.uiGlow === '1') return;
+                    el.dataset.uiGlow = '1';
+                    el.addEventListener('pointermove', setPointerGlow);
+                });
+            }
+
+            function attachRipples(root = document) {
+                root.querySelectorAll('.btn').forEach(btn => {
+                    if (btn.dataset.uiRipple === '1') return;
+                    btn.dataset.uiRipple = '1';
+                    btn.addEventListener('click', event => {
+                        const rect = btn.getBoundingClientRect();
+                        const ripple = document.createElement('span');
+                        const size = Math.max(rect.width, rect.height);
+                        ripple.className = 'ui-ripple';
+                        ripple.style.width = `${size}px`;
+                        ripple.style.height = `${size}px`;
+                        ripple.style.left = `${event.clientX - rect.left}px`;
+                        ripple.style.top = `${event.clientY - rect.top}px`;
+                        btn.appendChild(ripple);
+                        window.setTimeout(() => ripple.remove(), 620);
+                    });
+                });
+            }
+
+            function attachDragFeedback(root = document) {
+                root.querySelectorAll('.upload-zone').forEach(zone => {
+                    if (zone.dataset.uiDrag === '1') return;
+                    zone.dataset.uiDrag = '1';
+                    ['dragenter', 'dragover'].forEach(type => {
+                        zone.addEventListener(type, () => zone.classList.add('is-dragging'));
+                    });
+                    ['dragleave', 'drop'].forEach(type => {
+                        zone.addEventListener(type, () => zone.classList.remove('is-dragging'));
+                    });
+                });
+            }
+
+            function revealVisible(root = document) {
+                root.querySelectorAll(revealTargets).forEach((el, index) => {
+                    if (el.dataset.uiReady === '1') return;
+                    el.dataset.uiReady = '1';
+                    el.style.animationDelay = `${Math.min(index * 35, 280)}ms`;
+                    el.classList.add('ui-ready');
+                });
+            }
+
+            function enhance(root = document) {
+                attachPointerGlow(root);
+                attachRipples(root);
+                attachDragFeedback(root);
+                revealVisible(root);
+            }
+
+            document.addEventListener('DOMContentLoaded', () => {
+                enhance();
+                const observer = new MutationObserver(mutations => {
+                    for (const mutation of mutations) {
+                        mutation.addedNodes.forEach(node => {
+                            if (node.nodeType === 1) enhance(node);
+                        });
+                    }
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            });
+        })();
+    </script>
 
     <div id="chatbot-widget">
         <div class="chatbot-icon" onclick="toggleChatbot()">
