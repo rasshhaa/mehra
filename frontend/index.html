@@ -3081,83 +3081,7 @@ setTimeout(() => checkExpiryWarnings(), 2000); // slight delay so UI settles
 
         portalGoTo('garageProfile');
     } 
-    else if (role === 'insurance') {
-        // Load insurance profile
-    // Read garage name from ALL possible Firestore locations
-    let savedG = {};
-    try {
-        const [garageSnap, metaSnap] = await Promise.all([
-            window._fsGetDoc(window._fsDoc(window._fbDb, 'users', user.uid, 'profile', 'garage')),
-            window._fsGetDoc(window._fsDoc(window._fbDb, 'users', user.uid, 'profile', 'meta'))
-        ]);
-
-        if (garageSnap.exists()) {
-            savedG = garageSnap.data();
-        } else if (metaSnap.exists() && metaSnap.data().garage) {
-            savedG = metaSnap.data().garage;
-        } else if (metaSnap.exists()) {
-            // Signup data stored flat on meta
-            const m = metaSnap.data();
-            savedG = {
-                name:    m.garageName || m.name || '',
-                city:    m.garageCity || m.city || '',
-                license: m.garageLicense || m.license || '',
-                phone:   m.garagePhone || m.phone || '',
-                address: m.garageAddress || m.address || '',
-            };
-        }
-
-        // If name still empty, try reading the auth displayName
-        if (!savedG.name && user.displayName) {
-            savedG.name = user.displayName;
-        }
-
-    } catch(e) {
-        console.warn('[showPortal garage] profile read error:', e);
-    }
-
-    // Store globally so all functions can access it without re-fetching
-    window._garageProfile = savedG;
-    console.log('[Garage Login] Profile loaded:', savedG);
-    console.log('[Garage Login] Name:', savedG.name);
-
-    // Auto-save to profile/garage if it only exists in meta
-    if (savedG.name) {
-        window._fsSetDoc(
-            window._fsDoc(window._fbDb, 'users', user.uid, 'profile', 'garage'),
-            savedG
-        ).catch(e => console.warn('[Garage] auto-save failed:', e));
-    }
-
-    // Populate form fields
-    if (document.getElementById('garageName'))    document.getElementById('garageName').value    = savedG.name    || '';
-    if (document.getElementById('garagePhone'))   document.getElementById('garagePhone').value   = savedG.phone   || '';
-    if (document.getElementById('garageAddress')) document.getElementById('garageAddress').value = savedG.address || '';
-    if (document.getElementById('garageCity'))    document.getElementById('garageCity').value    = savedG.city    || '';
-    if (document.getElementById('garageLicense')) document.getElementById('garageLicense').value = savedG.license || '';
-
-    renderGarageProfileCard(savedG);
-    portalGoTo('garageProfile');
-
-    // Scan for existing appointments and notify
-   if (savedG.name) {
-        // Run scan immediately, no delay
-        scanAndNotifyExistingAppointments(savedG.name, user.uid);
-    }
-
-    // Small delay so _garageProfile is set before rendering
-    setTimeout(() => renderGarageAppointments(), 200);
-    updateBellBadge();
-
-    // Real-time listener
-    getAllAppointmentsRealTime((all) => {
-        updateBellBadge();
-        if (document.getElementById('sec-appointments')?.classList.contains('active')) {
-            renderGarageAppointments();
-        }
-        _checkForNewPendingAppointments(all);
-    });
-} else if (role === 'insurance') {
+else if (role === 'insurance') {
         window._fsGetDoc(window._fsDoc(window._fbDb, 'users', user.uid, 'profile', 'insurance'))
             .then(snap => {
                 if (snap.exists()) {
@@ -3171,11 +3095,8 @@ setTimeout(() => checkExpiryWarnings(), 2000); // slight delay so UI settles
             .catch(err => console.warn('[Insurance Profile] load error:', err));
 
         portalGoTo('insProfile');
-        renderInsClaims();   // Show incoming claims by default
-        portalGoTo('insProfile');
         renderInsClaims();
-    }
-    else if (role === 'rta') {
+    } else if (role === 'rta') {
         window._fsGetDoc(window._fsDoc(window._fbDb, 'users', user.uid, 'profile', 'rta'))
             .then(snap => {
                 if (snap.exists()) {
