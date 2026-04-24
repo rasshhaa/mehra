@@ -1010,6 +1010,17 @@ async def read_root():
         return FileResponse(frontend_path)
     return JSONResponse(status_code=404, content={"error": "index.html not found"})
 
+@app.get("/sw.js")
+async def get_service_worker():
+    sw_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "sw.js")
+    if not os.path.exists(sw_path):
+        raise HTTPException(status_code=404, detail="sw.js not found")
+    return FileResponse(
+        sw_path,
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"}
+    )
+
 
 @app.get("/report")
 def get_report():
@@ -1061,4 +1072,8 @@ async def debug_dual_model(file: UploadFile = File(...)):
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+<<<<<<< HEAD
 app.mount("/static", StaticFiles(directory="../frontend/static"), name="static")
+=======
+app.mount("/static", StaticFiles(directory="../frontend/static"), name="static")
+>>>>>>> 70d7f03 (cost estimation integrated)

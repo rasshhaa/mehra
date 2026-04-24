@@ -10,6 +10,10 @@
         href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="/static/styles.css">
+<<<<<<< HEAD
+=======
+    <script src="/static/claim-cost-config.js"></script>
+>>>>>>> 70d7f03 (cost estimation integrated)
     
    <!-- Firebase SDK -->
 <!-- Firebase SDK -->
@@ -19,7 +23,7 @@
              signOut, onAuthStateChanged, updateProfile }
         from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import { getFirestore, doc, setDoc, getDoc, collection,
-             addDoc, getDocs, query, orderBy, updateDoc, deleteDoc, onSnapshot }
+             addDoc, getDocs, query, orderBy, updateDoc, deleteDoc, onSnapshot, where, limit }
         from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     const firebaseConfig = {
@@ -54,6 +58,8 @@
     window._fsGetDocs     = getDocs;
     window._fsQuery       = query;
     window._fsOrderBy     = orderBy;
+    window._fsWhere       = where;
+    window._fsLimit       = limit;
     window._fsUpdateDoc   = updateDoc;
     window._fsDeleteDoc   = deleteDoc;
     window._fsOnSnapshot  = onSnapshot;   // ← MUST be here
@@ -2400,7 +2406,7 @@
 
     <script>
 
-        const API = 'http://localhost:8000';
+        const API = window.location.origin;
         let authMode = 'signup';
         let pdfOption = 'preview';
         let _currentRole = 'owner';
@@ -2450,6 +2456,177 @@ function fuzzyMatch(a, b) {
     const longer  = wordsA.length < wordsB.length ? wordsB : wordsA;
     const matchCount = shorter.filter(w => longer.some(lw => lw.includes(w) || w.includes(lw))).length;
     return matchCount >= Math.ceil(shorter.length * 0.6);
+}
+
+let _swRegisterPromise = null;
+function normalizeGarageName(name) {
+    return String(name || '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+async function ensurePushServiceWorker() {
+    if (!('serviceWorker' in navigator)) return null;
+    if (_swRegisterPromise) return _swRegisterPromise;
+    _swRegisterPromise = navigator.serviceWorker.register('/sw.js');
+    try {
+        await _swRegisterPromise;
+    } catch (err) {
+        console.warn('[SW] registration failed:', err);
+    }
+    return _swRegisterPromise;
+}
+
+async function findGarageByName(garageName) {
+    try {
+        const normalized = normalizeGarageName(garageName);
+        if (!normalized) return null;
+        const exactQ = window._fsQuery(
+            window._fsCollection(window._fbDb, 'garageDirectory'),
+            window._fsWhere('nameLower', '==', normalized),
+            window._fsLimit(1)
+        );
+        const exactSnap = await window._fsGetDocs(exactQ);
+        if (!exactSnap.empty) {
+            const d = exactSnap.docs[0];
+            return { uid: d.id, ...(d.data() || {}) };
+        }
+        const all = await window._fsGetDocs(window._fsCollection(window._fbDb, 'garageDirectory'));
+        const fuzzy = all.docs.find(d => fuzzyMatch((d.data() || {}).nameLower || '', normalized));
+        if (!fuzzy) return null;
+        return { uid: fuzzy.id, ...(fuzzy.data() || {}) };
+    } catch (e) {
+        console.warn('[Garage lookup] failed:', e);
+        return null;
+    }
+}
+
+async function writeGarageNotification(garageUid, appt) {
+    if (!garageUid || !appt?.id) return false;
+    try {
+        const notifId = `gnotif_${appt.id}`;
+        await window._fsSetDoc(
+            window._fsDoc(window._fbDb, 'users', garageUid, 'notifications', notifId),
+            {
+                id: notifId,
+                type: 'new_booking',
+                appointmentId: appt.id,
+                ownerId: appt.ownerId || '',
+                ownerName: appt.ownerName || 'Vehicle Owner',
+                service: appt.service || 'Service',
+                date: appt.date || '',
+                time: appt.time || '',
+                garageName: appt.garage || '',
+                garageUid,
+                read: false,
+                createdAt: Date.now()
+            }
+        );
+        return true;
+    } catch (e) {
+        console.warn('[Garage notification] failed:', e);
+        return false;
+    }
+}
+
+window._claimApprovalDrafts = {};
+
+function getClaimCostConfig() {
+    const cfg = window.CLAIM_COST_CONFIG || {};
+    return {
+        currency: cfg.currency || 'USD',
+        defaultCoveragePercent: Number(cfg.defaultCoveragePercent ?? 80),
+        severityMultipliers: cfg.severityMultipliers || { minor: 1, moderate: 1.5, severe: 2.5 },
+        defectBaseCosts: cfg.defectBaseCosts || {}
+    };
+}
+
+function formatCurrency(amount, currencyCode) {
+    const value = Number(amount || 0);
+    const code = currencyCode || getClaimCostConfig().currency;
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: code, maximumFractionDigits: 2 }).format(value);
+}
+
+function normalizeDefectType(raw) {
+    return String(raw || '').toLowerCase().trim();
+}
+
+function resolveBaseCost(defectType, affectedPart, baseCosts) {
+    const key = normalizeDefectType(defectType);
+    if (baseCosts[key] != null) return Number(baseCosts[key]) || 0;
+
+    const part = normalizeDefectType(affectedPart);
+    const text = `${key} ${part}`.trim();
+    const rules = [
+        { tokens: ['windshield', 'glass'], priceKey: 'windshield damage' },
+        { tokens: ['bumper'], priceKey: 'bumper crack' },
+        { tokens: ['door'], priceKey: 'door dent' },
+        { tokens: ['hood', 'bonnet'], priceKey: 'hood scratch' },
+        { tokens: ['mirror'], priceKey: 'side mirror' },
+        { tokens: ['tyre', 'tire', 'wheel'], priceKey: 'tyre damage' }
+    ];
+    for (const rule of rules) {
+        if (rule.tokens.some(t => text.includes(t))) {
+            return Number(baseCosts[rule.priceKey] || 0);
+        }
+    }
+    return 0;
+}
+
+function normalizeSeverity(raw) {
+    const s = String(raw || '').toLowerCase().trim();
+    if (s === 'minor' || s === 'moderate' || s === 'severe') return s;
+    return 'minor';
+}
+
+function normalizeInspectionDefects(defects) {
+    const arr = Array.isArray(defects) ? defects : [];
+    return arr.map((d) => {
+        const confidenceRaw = d?.confidence_score ?? d?.confidence ?? d?.score ?? 1;
+        const confidence = Math.max(0, Math.min(1, Number(confidenceRaw) > 1 ? Number(confidenceRaw) / 100 : Number(confidenceRaw) || 0));
+        return {
+            defect_type: d?.defect_type || d?.label || d?.class || 'unknown defect',
+            severity: normalizeSeverity(d?.severity),
+            affected_part: d?.affected_part || d?.part || d?.label || 'unknown part',
+            confidence_score: confidence
+        };
+    });
+}
+
+function calculateClaimCost(defectsInput, coveragePercentInput) {
+    const cfg = getClaimCostConfig();
+    const defects = normalizeInspectionDefects(defectsInput);
+    const coveragePercent = Math.max(0, Math.min(100, Number(coveragePercentInput ?? cfg.defaultCoveragePercent) || cfg.defaultCoveragePercent));
+
+    const lineItems = defects.map((d, idx) => {
+        const typeKey = normalizeDefectType(d.defect_type);
+        const base = resolveBaseCost(d.defect_type, d.affected_part, cfg.defectBaseCosts);
+        const severityMultiplier = Number(cfg.severityMultipliers[d.severity] || 1);
+        const weightedCost = base * severityMultiplier * d.confidence_score;
+        return {
+            index: idx + 1,
+            defect_type: d.defect_type,
+            affected_part: d.affected_part,
+            severity: d.severity,
+            confidence_score: d.confidence_score,
+            base_cost: base,
+            severity_multiplier: severityMultiplier,
+            weighted_cost: Number(weightedCost.toFixed(2))
+        };
+    });
+
+    const subtotal = Number(lineItems.reduce((sum, item) => sum + item.weighted_cost, 0).toFixed(2));
+    const coverageAmount = Number((subtotal * (coveragePercent / 100)).toFixed(2));
+    const ownerLiability = Number((subtotal - coverageAmount).toFixed(2));
+    const finalPayout = coverageAmount;
+
+    return {
+        currency: cfg.currency,
+        coverage_percent: coveragePercent,
+        line_items: lineItems,
+        subtotal,
+        coverage_amount: coverageAmount,
+        owner_liability: ownerLiability,
+        final_payout: finalPayout
+    };
 }
 // Real-time appointments listener
 // Real-time appointments listener
@@ -2765,6 +2942,9 @@ window._handleAuthChange = async function (user) {
         }
         _pendingRole = null;
         _currentRole = savedRole;
+        if (savedRole === 'garage') {
+            ensurePushServiceWorker();
+        }
 
         // Ensure role is persisted
 
@@ -2824,16 +3004,25 @@ document.getElementById('marketplaceNav').style.display = 'none';
             _pendingRole = role;
 
             if (role === 'garage') {
+                const signupGarage = {
+                    name:    document.getElementById('authGarageName').value.trim(),
+                    city:    document.getElementById('authGarageCity').value.trim(),
+                    license: document.getElementById('authGarageLicense').value.trim(),
+                    address: '', phone: ''
+                };
                 await window._fsSetDoc(window._fsDoc(db, 'users', uid, 'profile', 'meta'), {
                     role,
                     email,
                     createdAt: new Date().toISOString(),
-                    garage: {
-                        name:    document.getElementById('authGarageName').value.trim(),
-                        city:    document.getElementById('authGarageCity').value.trim(),
-                        license: document.getElementById('authGarageLicense').value.trim(),
-                        address: '', phone: ''
-                    }
+                    garage: signupGarage
+                });
+                await window._fsSetDoc(window._fsDoc(db, 'garageDirectory', uid), {
+                    uid,
+                    name: signupGarage.name || '',
+                    nameLower: normalizeGarageName(signupGarage.name),
+                    city: signupGarage.city || '',
+                    address: '',
+                    updatedAt: Date.now()
                 });
             } else if (role === 'owner') {
                 await window._fsSetDoc(window._fsDoc(db, 'users', uid, 'profile', 'meta'), {
@@ -3626,6 +3815,18 @@ if (section === 'claimHistory')   renderGarageClaimHistory();
             data
         );
 
+        await window._fsSetDoc(
+            window._fsDoc(window._fbDb, 'garageDirectory', uid),
+            {
+                uid,
+                name: data.name || '',
+                nameLower: normalizeGarageName(data.name),
+                city: data.city || '',
+                address: data.address || '',
+                updatedAt: Date.now()
+            }
+        );
+
         // Also update meta
         await window._fsUpdateDoc(
             window._fsDoc(window._fbDb, 'users', uid, 'profile', 'meta'),
@@ -3922,9 +4123,11 @@ async function confirmAppointment() {
         }
     } catch(e) { console.warn('[Appt] vehicle fetch failed (non-fatal):', e); }
 
+    const matchedGarage = await findGarageByName(_selectedGarageName);
     const appt = {
         id,
         garage: _selectedGarageName || '',
+        garageUid: matchedGarage?.uid || null,
         garageAddress: _selectedGarageAddress || '',
         service,
         date,
@@ -3946,6 +4149,7 @@ async function confirmAppointment() {
         await window._fsSetDoc(
             window._fsDoc(window._fbDb, 'appointments', id), appt
         );
+        await writeGarageNotification(matchedGarage?.uid, appt);
         console.log('[Appt] PRIMARY write success:', id);
     } catch(e) {
         console.error('[Appt] PRIMARY write failed:', e);
@@ -5638,7 +5842,9 @@ state.batchAnnotated = data.annotated_images || [];
     console.error("Inspection API Error:", e);
     const msg = e.name === 'AbortError'
         ? 'Analysis timed out — Roboflow may be cold-starting, try again in 30s'
-        : (e.message || 'Failed to process images. Please try again.');
+        : (e.message === 'Failed to fetch'
+            ? 'Cannot reach backend. Ensure server is running on this same URL and try again.'
+            : (e.message || 'Failed to process images. Please try again.'));
     toast(msg, 'error');
     document.getElementById('btnAnalyze').style.display = 'inline-flex';
     document.getElementById('btnAnalyze').disabled = false;
@@ -7327,6 +7533,7 @@ async function createInsuranceClaim(appt) {
         // Get owner's latest AI inspection for defect data
         let defectSummary = '';
         let healthScore = null;
+        let inspectionDefects = [];
         try {
             const iSnap = await window._fsGetDocs(
                 window._fsQuery(
@@ -7338,6 +7545,16 @@ async function createInsuranceClaim(appt) {
                 const latest = iSnap.docs[0].data();
                 healthScore = latest.score || null;
                 const defects = latest.defectDetails || [];
+                inspectionDefects = defects.map(d => {
+                    const confidenceRaw = d?.confidence ?? d?.confidence_score ?? 0;
+                    const confidence = Math.max(0, Math.min(1, Number(confidenceRaw) > 1 ? Number(confidenceRaw) / 100 : Number(confidenceRaw) || 0));
+                    return {
+                        defect_type: d?.label || d?.class || 'unknown defect',
+                        severity: normalizeSeverity(d?.severity),
+                        affected_part: d?.part || d?.label || 'unknown part',
+                        confidence_score: confidence
+                    };
+                });
                 defectSummary = defects.length
                     ? defects.map(d => `${d.label || 'Unknown'} (${d.confidence || 0}%)`).join(', ')
                     : 'No AI defects on record';
@@ -7364,6 +7581,8 @@ async function createInsuranceClaim(appt) {
             appointmentDate: appt.date,
             notes:           appt.notes || '',
             defectSummary,
+            inspection_defects: inspectionDefects,
+            coverage_percent: Number(mulkiya.coveragePercent || getClaimCostConfig().defaultCoveragePercent),
             healthScore,
         };
 
@@ -7462,22 +7681,20 @@ async function renderInsClaims() {
             ${c.aiScanData?`<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.75rem;color:var(--tm);font-family:'JetBrains Mono',monospace;">🤖 AI detected ${c.aiScanData.defectsFound||0} damage areas</div>`:''}
             ${c.status==='pending'?`
             <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
-                <input type="text" id="claimAmt_${c.id}" placeholder="Approved amount (AED)"
-                    style="flex:1;min-width:160px;background:rgba(255,255,255,.06);border:1px solid var(--border);
-                           border-radius:8px;padding:9px 14px;color:var(--t);font-family:'Syne',sans-serif;">
-                <button onclick="processInsuranceClaim('${c.id}','approved')"
+                <button onclick="prepareClaimApproval('${c.id}')"
                     style="padding:9px 18px;background:rgba(74,222,128,0.1);color:#4ade80;
                            border:1px solid rgba(74,222,128,0.3);border-radius:8px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;">
-                    ✅ Approve
+                    ✅ Approve & Calculate
                 </button>
                 <button onclick="processInsuranceClaim('${c.id}','rejected')"
                     style="padding:9px 18px;background:rgba(255,68,68,0.08);color:#ff6666;
                            border:1px solid rgba(255,68,68,0.25);border-radius:8px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;">
                     ❌ Reject
                 </button>
-            </div>`:
+            </div>
+            <div id="claimApprovalPanel_${c.id}" style="display:none;margin-top:12px;"></div>`:
             c.status==='approved'?`<div style="margin-top:8px;font-size:0.82rem;color:#4ade80;">
-                ✅ Approved${c.approvedAmount?' — AED '+c.approvedAmount:''} ${c.processedAt?'· '+c.processedAt:''}
+                ✅ Approved${c.final_amount != null ? ' — ' + formatCurrency(c.final_amount, c.currency || getClaimCostConfig().currency) : c.approvedAmount ? ' — AED ' + c.approvedAmount : ''} ${c.processedAt?'· '+c.processedAt:''}
             </div>`:`<div style="margin-top:8px;font-size:0.82rem;color:#ff6666;">
                 ❌ Rejected ${c.processedAt?'· '+c.processedAt:''}
             </div>`}
@@ -7523,22 +7740,121 @@ async function renderInsHistory() {
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
                 <div><div style="font-weight:800;color:var(--t);">${c.ownerName || '—'}</div>
                 <div style="font-size:0.78rem;color:var(--tm);font-family:'JetBrains Mono',monospace;">${c.vehicle || '—'} · ${c.garageName || '—'}</div></div>
-                <span style="background:${sc}20;color:${sc};padding:4px 12px;border-radius:20px;font-size:0.7rem;font-weight:800;border:1px solid ${sc}40;">${c.status.toUpperCase()}${c.approvedAmount ? ' — AED ' + c.approvedAmount : ''}</span>
+                <span style="background:${sc}20;color:${sc};padding:4px 12px;border-radius:20px;font-size:0.7rem;font-weight:800;border:1px solid ${sc}40;">${c.status.toUpperCase()}${c.final_amount != null ? ' — ' + formatCurrency(c.final_amount, c.currency || getClaimCostConfig().currency) : c.approvedAmount ? ' — AED ' + c.approvedAmount : ''}</span>
             </div>
             <div style="font-size:0.75rem;color:var(--td);margin-top:8px;font-family:'JetBrains Mono',monospace;">Processed: ${c.processedAt || '—'} · Policy: ${c.policyNo || '—'}</div>
         </div>`;
     }).join('');
 }
+<<<<<<< HEAD
 async function processInsuranceClaim(claimId, decision) {
+=======
+async function prepareClaimApproval(claimId) {
+    try {
+        const claimSnap = await window._fsGetDoc(window._fsDoc(window._fbDb, 'insuranceClaims', claimId));
+        if (!claimSnap.exists()) return toast('Claim not found', 'error');
+        const claim = claimSnap.data();
+
+        const panel = document.getElementById(`claimApprovalPanel_${claimId}`);
+        if (!panel) return;
+
+        const defects = normalizeInspectionDefects(claim.inspection_defects || []);
+        const cfg = getClaimCostConfig();
+        const coveragePercent = Number(claim.coverage_percent ?? claim.mulkiya?.coveragePercent ?? cfg.defaultCoveragePercent);
+        const breakdown = calculateClaimCost(defects, coveragePercent);
+        window._claimApprovalDrafts[claimId] = breakdown;
+
+        const rows = breakdown.line_items.length
+            ? breakdown.line_items.map(item => `
+                <div style="display:grid;grid-template-columns:1.2fr .8fr .9fr .9fr;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.74rem;font-family:'JetBrains Mono',monospace;">
+                    <div>${item.defect_type} <span style="color:var(--tm)">(${item.affected_part})</span></div>
+                    <div>${item.severity.toUpperCase()}</div>
+                    <div>${formatCurrency(item.base_cost, breakdown.currency)} x ${item.severity_multiplier} x ${(item.confidence_score * 100).toFixed(0)}%</div>
+                    <div style="text-align:right;color:#4ade80;">${formatCurrency(item.weighted_cost, breakdown.currency)}</div>
+                </div>
+            `).join('')
+            : `<div style="padding:10px;color:var(--tm);font-size:0.78rem;">No AI defects found. Payout defaults to zero.</div>`;
+
+        panel.innerHTML = `
+            <div style="background:rgba(200,216,228,0.05);border:1px solid var(--border);border-radius:10px;padding:12px;">
+                <div style="font-weight:800;color:var(--c);margin-bottom:8px;">Auto Cost Breakdown</div>
+                <div style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.08);border-radius:8px;overflow:hidden;">
+                    <div style="display:grid;grid-template-columns:1.2fr .8fr .9fr .9fr;gap:8px;padding:8px 10px;background:rgba(255,255,255,0.05);font-size:0.68rem;color:var(--tm);font-family:'JetBrains Mono',monospace;text-transform:uppercase;">
+                        <div>Defect</div><div>Severity</div><div>Formula</div><div style="text-align:right;">Cost</div>
+                    </div>
+                    ${rows}
+                </div>
+                <div style="margin-top:10px;font-size:0.78rem;line-height:1.7;">
+                    <div>Subtotal: <strong>${formatCurrency(breakdown.subtotal, breakdown.currency)}</strong></div>
+                    <div>Coverage: <strong>${breakdown.coverage_percent}%</strong> → ${formatCurrency(breakdown.coverage_amount, breakdown.currency)}</div>
+                    <div>Owner Liability: <strong>${formatCurrency(breakdown.owner_liability, breakdown.currency)}</strong></div>
+                    <div style="font-size:0.9rem;color:#4ade80;">Final Payout: <strong>${formatCurrency(breakdown.final_payout, breakdown.currency)}</strong></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+                    <input id="claimOverride_${claimId}" type="number" min="0" step="0.01" placeholder="Optional manual final payout (${breakdown.currency})"
+                        style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--t);">
+                    <input id="claimOverrideReason_${claimId}" type="text" placeholder="Reason for manual final payout (required)"
+                        style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--t);">
+                </div>
+                <div style="margin-top:8px;font-size:0.73rem;color:var(--tm);font-family:'JetBrains Mono',monospace;">
+                    If manual final payout is entered, it replaces the calculated payout and becomes the saved final amount.
+                </div>
+                <div style="display:flex;gap:8px;margin-top:10px;">
+                    <button onclick="confirmClaimApproval('${claimId}')"
+                        style="padding:8px 14px;background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.35);border-radius:8px;font-weight:700;cursor:pointer;">
+                        Confirm Approval
+                    </button>
+                    <button onclick="document.getElementById('claimApprovalPanel_${claimId}').style.display='none'"
+                        style="padding:8px 14px;background:rgba(255,255,255,0.06);color:var(--tm);border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        `;
+        panel.style.display = 'block';
+    } catch (e) {
+        console.error('[Prepare Claim Approval]', e);
+        toast('Failed to calculate claim cost', 'error');
+    }
+}
+
+function confirmClaimApproval(claimId) {
+    const draft = window._claimApprovalDrafts[claimId];
+    if (!draft) return toast('Please calculate cost first', 'error');
+    const overrideRaw = document.getElementById(`claimOverride_${claimId}`)?.value?.trim() || '';
+    const reason = document.getElementById(`claimOverrideReason_${claimId}`)?.value?.trim() || '';
+    const hasOverride = overrideRaw !== '';
+    const overrideAmount = hasOverride ? Number(overrideRaw) : null;
+    if (hasOverride && (!Number.isFinite(overrideAmount) || overrideAmount < 0)) {
+        return toast('Override amount must be a valid positive number', 'error');
+    }
+    if (hasOverride && !reason) return toast('Reason is required when manual final payout is used', 'error');
+
+    processInsuranceClaim(claimId, 'approved', {
+        calculation: draft,
+        finalAmount: hasOverride ? Number(overrideAmount.toFixed(2)) : draft.final_payout,
+        isOverridden: hasOverride,
+        overrideReason: hasOverride ? reason : null
+    });
+}
+
+async function processInsuranceClaim(claimId, decision, approvalData = null) {
+>>>>>>> 70d7f03 (cost estimation integrated)
     const btn = document.querySelector(`[onclick="processInsuranceClaim('${claimId}','${decision}')"]`);
     if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
 
     try {
+<<<<<<< HEAD
         const amount = document.getElementById(`claimAmt_${claimId}`)?.value.trim() || '';
 
         if (decision === 'approved' && !amount) {
             toast('Please enter an approved amount (AED)', 'error');
             if (btn) { btn.disabled = false; btn.textContent = '✅ Approve'; }
+=======
+        if (decision === 'approved' && !approvalData?.calculation) {
+            toast('Please calculate and confirm payout before approval', 'error');
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Approve & Calculate'; }
+>>>>>>> 70d7f03 (cost estimation integrated)
             return;
         }
 
@@ -7553,9 +7869,18 @@ async function processInsuranceClaim(claimId, decision) {
             window._fsDoc(window._fbDb, 'insuranceClaims', claimId),
             {
                 status:         decision,
-                approvedAmount: amount || null,
                 processedAt:    new Date().toLocaleDateString(),
                 processedTs:    Date.now(),
+                approvedAmount: decision === 'approved' ? String(approvalData.finalAmount) : null,
+                calculated_amount: decision === 'approved' ? approvalData.calculation.final_payout : null,
+                final_amount: decision === 'approved' ? approvalData.finalAmount : null,
+                override_reason: decision === 'approved' ? (approvalData.overrideReason || null) : null,
+                is_overridden: decision === 'approved' ? !!approvalData.isOverridden : false,
+                approved_by: decision === 'approved' ? (window._currentUser?.uid || null) : null,
+                approved_at: decision === 'approved' ? Date.now() : null,
+                coverage_percent: decision === 'approved' ? approvalData.calculation.coverage_percent : null,
+                currency: decision === 'approved' ? approvalData.calculation.currency : null,
+                cost_breakdown: decision === 'approved' ? approvalData.calculation : null
             }
         );
 
@@ -7567,7 +7892,7 @@ async function processInsuranceClaim(claimId, decision) {
                 {
                     status:            newApptStatus,
                     insuranceDecision: decision,
-                    approvedAmount:    amount || null,
+                    approvedAmount:    decision === 'approved' ? String(approvalData.finalAmount) : null,
                     insuranceUpdated:  new Date().toLocaleDateString(),
                 }
             ).catch(e => console.warn('[Claim] appt update failed:', e));
@@ -7576,7 +7901,11 @@ async function processInsuranceClaim(claimId, decision) {
         // Notify owner
         const ownerMsg = decision === 'approved'
             ? `✅ Your insurance claim has been <strong>approved</strong>` +
+<<<<<<< HEAD
               `${amount ? ' — <strong>AED ' + amount + '</strong> authorized' : ''}. ` +
+=======
+              `${approvalData?.finalAmount != null ? ' — <strong>' + formatCurrency(approvalData.finalAmount, approvalData.calculation.currency) + '</strong> authorized' : ''}. ` +
+>>>>>>> 70d7f03 (cost estimation integrated)
               `Repairs will begin at <strong>${claim.garageName || 'the garage'}</strong>.` +
               (claim.accidentPdfUrl ? ` <a href="${claim.accidentPdfUrl}" style="color:var(--c)">View PDF Report</a>` : '')
             : `❌ Your insurance claim for repair at <strong>${claim.garageName || 'the garage'}</strong> ` +
@@ -7586,7 +7915,11 @@ async function processInsuranceClaim(claimId, decision) {
         // Notify garage
         const garageMsg = decision === 'approved'
             ? `✅ Insurance <strong>APPROVED</strong> for ${claim.ownerName || 'customer'} ` +
+<<<<<<< HEAD
               `(${claim.vehicle || '—'})${amount ? ' — AED ' + amount + ' authorized' : ''}. ` +
+=======
+              `(${claim.vehicle || '—'})${approvalData?.finalAmount != null ? ' — ' + formatCurrency(approvalData.finalAmount, approvalData.calculation.currency) + ' authorized' : ''}. ` +
+>>>>>>> 70d7f03 (cost estimation integrated)
               `Proceed with accident repairs.`
             : `❌ Insurance <strong>REJECTED</strong> for ${claim.ownerName || 'customer'} ` +
               `(${claim.vehicle || '—'}). Do not proceed without owner confirmation.`;
@@ -7599,7 +7932,11 @@ async function processInsuranceClaim(claimId, decision) {
 
         toast(
             decision === 'approved'
+<<<<<<< HEAD
                 ? `✅ Claim approved — AED ${amount} authorized`
+=======
+                ? `✅ Claim approved — ${formatCurrency(approvalData.finalAmount, approvalData.calculation.currency)} authorized`
+>>>>>>> 70d7f03 (cost estimation integrated)
                 : '❌ Claim rejected — owner notified',
             decision === 'approved' ? 'success' : 'error'
         );
@@ -7611,7 +7948,11 @@ async function processInsuranceClaim(claimId, decision) {
     } catch(e) {
         console.error('[Process Claim]', e);
         toast('Failed to process claim: ' + e.message, 'error');
+<<<<<<< HEAD
         if (btn) { btn.disabled = false; btn.textContent = decision === 'approved' ? '✅ Approve' : '❌ Reject'; }
+=======
+        if (btn) { btn.disabled = false; btn.textContent = decision === 'approved' ? '✅ Approve & Calculate' : '❌ Reject'; }
+>>>>>>> 70d7f03 (cost estimation integrated)
     }
 }
 let mulkiyaFiles = [];
@@ -9708,6 +10049,52 @@ async function renderReportAccidentSection() {
 window._accidentImages = [];
 window._accidentScanData = null;
 
+<<<<<<< HEAD
+=======
+async function hydrateAccidentScanDataFromHistory(uid) {
+    try {
+        const snap = await window._fsGetDocs(
+            window._fsQuery(
+                window._fsCollection(window._fbDb, 'users', uid, 'inspections'),
+                window._fsOrderBy('timestamp', 'desc'),
+                window._fsLimit(1)
+            )
+        );
+        if (snap.empty) return null;
+
+        const latest = snap.docs[0].data() || {};
+        const rawDetails = Array.isArray(latest.defectDetails) ? latest.defectDetails : [];
+        const defectDetails = rawDetails.map((d) => {
+            const label = d?.label || d?.part || 'Unknown';
+            const confidence = Number(d?.confidence || 0);
+            const tier = confidence >= 80 ? 'severe' : confidence >= 55 ? 'moderate' : 'minor';
+            return {
+                label,
+                zone: label.includes(' — ') ? label.split(' — ')[0] : label,
+                severity: d?.severity || d?.severity_tier || (tier[0].toUpperCase() + tier.slice(1)),
+                severity_tier: d?.severity_tier || tier,
+                confidence
+            };
+        });
+
+        const defectsFound = Number(latest.defects || 0) || new Set(defectDetails.map(d => String(d.zone || '').toLowerCase()).filter(Boolean)).size;
+        return {
+            defectsFound,
+            defectDetails,
+            defectsRaw: defectDetails.map(d => [d.label, d.confidence]),
+            annotatedImages: [],
+            aiAnalysis: latest.score != null ? { health_score: latest.score } : null,
+            overallStatus: latest.status === 'pass' ? 'PASS' : latest.status === 'fail' ? 'FAIL' : 'ATTENTION',
+            timestamp: latest.timestamp || Date.now(),
+            fromHistory: true
+        };
+    } catch (e) {
+        console.warn('[Accident] history fallback failed:', e);
+        return null;
+    }
+}
+
+>>>>>>> 70d7f03 (cost estimation integrated)
 function handleAccidentFiles(files) {
     const grid  = document.getElementById('accImgPreviewGrid');
     const btn   = document.getElementById('btnAccidentScan');
@@ -10019,8 +10406,17 @@ async function submitOwnerAccidentClaim() {
     const uid = window._currentUser?.uid;
     if (!uid) return toast('Please log in first', 'error');
 
+<<<<<<< HEAD
     if (!window._accidentScanData) {
         return toast('Please run the AI inspection first (Step 1)', 'error');
+=======
+    let scanData = window._accidentScanData;
+    if (!scanData) {
+        scanData = await hydrateAccidentScanDataFromHistory(uid);
+        if (!scanData) return toast('Please run the AI inspection first (Step 1)', 'error');
+        window._accidentScanData = scanData;
+        toast('Using latest saved AI inspection from your history', 'info');
+>>>>>>> 70d7f03 (cost estimation integrated)
     }
 
     const garage   = document.getElementById('accGarage').value.trim();
@@ -10064,8 +10460,13 @@ async function submitOwnerAccidentClaim() {
         let accidentPdfUrl = null;
         try {
             // Build the payload exactly like generateReport() does
+<<<<<<< HEAD
             const rawDefects = window._accidentScanData.defectsRaw || [];
             const annotated  = window._accidentScanData.annotatedImages || [];
+=======
+            const rawDefects = scanData.defectsRaw || [];
+            const annotated  = scanData.annotatedImages || [];
+>>>>>>> 70d7f03 (cost estimation integrated)
 
             // Use state.batchAnnotated if available (set by runAccidentInspection)
             const annotatedForReport = (state.batchAnnotated && state.batchAnnotated.length)
@@ -10076,7 +10477,11 @@ async function submitOwnerAccidentClaim() {
                 defects_detected:    rawDefects,
                 annotated_images:    annotatedForReport,
                 image_count:         (window._accidentImages || []).length,
+<<<<<<< HEAD
                 unique_defect_types: window._accidentScanData.defectsFound || 0,
+=======
+                unique_defect_types: scanData.defectsFound || 0,
+>>>>>>> 70d7f03 (cost estimation integrated)
                 vehicle_info: {
                     vin:     mulkiya.vin      || 'Not Provided',
                     make:    mulkiya.make     || 'Not Provided',
@@ -10105,7 +10510,11 @@ async function submitOwnerAccidentClaim() {
         }
 
         // ── Build claim description from real AI data ──────────────────────────
+<<<<<<< HEAD
         const defectDescription = (window._accidentScanData.defectDetails || [])
+=======
+        const defectDescription = (scanData.defectDetails || [])
+>>>>>>> 70d7f03 (cost estimation integrated)
             .map(d => {
                 const label = d.label || d.zone || 'Unknown';
                 const sev   = d.severity || d.severity_tier || 'Moderate';
@@ -10113,7 +10522,11 @@ async function submitOwnerAccidentClaim() {
                 return `${label}: ${sev} (${conf}% confidence)`;
             }).join('; ') || 'No detailed defects recorded';
 
+<<<<<<< HEAD
         const aiSummary = window._accidentScanData.aiAnalysis?.summary || '';
+=======
+        const aiSummary = scanData.aiAnalysis?.summary || '';
+>>>>>>> 70d7f03 (cost estimation integrated)
         const fullDescription = aiSummary
             ? `${aiSummary}\n\nDetected damage: ${defectDescription}`
             : defectDescription;
@@ -10137,6 +10550,7 @@ async function submitOwnerAccidentClaim() {
             incidentLocation: location,
             description:      fullDescription,
             aiScanData: {
+<<<<<<< HEAD
                 defectsFound:    window._accidentScanData.defectsFound,
                 healthScore:     window._accidentScanData.aiAnalysis?.health_score || null,
                 riskLevel:       window._accidentScanData.aiAnalysis?.risk_level   || null,
@@ -10144,6 +10558,21 @@ async function submitOwnerAccidentClaim() {
                 annotatedImages: window._accidentScanData.annotatedImages || [],
                 defectDetails:   window._accidentScanData.defectDetails   || [],
             },
+=======
+                defectsFound:    scanData.defectsFound,
+                healthScore:     scanData.aiAnalysis?.health_score || null,
+                riskLevel:       scanData.aiAnalysis?.risk_level   || null,
+                overallStatus:   scanData.overallStatus || 'ATTENTION',
+                annotatedImages: scanData.annotatedImages || [],
+                defectDetails:   scanData.defectDetails   || [],
+            },
+            inspection_defects: (scanData.defectDetails || []).map(d => ({
+                defect_type: d.label || d.zone || 'Unknown',
+                severity: (d.severity_tier || d.severity || 'moderate').toString().toLowerCase(),
+                affected_part: d.zone || d.label || 'Unknown',
+                confidence_score: Math.max(0, Math.min(1, Number(d.confidence || 0) > 1 ? Number(d.confidence || 0) / 100 : Number(d.confidence || 0)))
+            })),
+>>>>>>> 70d7f03 (cost estimation integrated)
             accidentPdfUrl:   accidentPdfUrl,
             createdAt:        new Date().toLocaleDateString(),
             timestamp:        Date.now(),
@@ -10171,9 +10600,15 @@ async function submitOwnerAccidentClaim() {
                 `🚨 <strong>New Accident Claim</strong> from ${ownerName} ` +
                 `(${vehicle}, Plate: ${plate}). ` +
                 `Policy: ${insPolicy} · Garage: ${garage} · Date: ${date}. ` +
+<<<<<<< HEAD
                 `AI: ${window._accidentScanData.defectsFound} damage area(s) detected` +
                 `${window._accidentScanData.aiAnalysis?.health_score !== undefined
                     ? `, Health Score: ${window._accidentScanData.aiAnalysis.health_score}/100` : ''}.` +
+=======
+                `AI: ${scanData.defectsFound} damage area(s) detected` +
+                `${scanData.aiAnalysis?.health_score !== undefined
+                    ? `, Health Score: ${scanData.aiAnalysis.health_score}/100` : ''}.` +
+>>>>>>> 70d7f03 (cost estimation integrated)
                 `${accidentPdfUrl ? ` <a href="${accidentPdfUrl}">View PDF</a>` : ''}`,
                 'claim_received',
                 claimId
