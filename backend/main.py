@@ -1072,8 +1072,4 @@ async def debug_dual_model(file: UploadFile = File(...)):
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-<<<<<<< HEAD
 app.mount("/static", StaticFiles(directory="../frontend/static"), name="static")
-=======
-app.mount("/static", StaticFiles(directory="../frontend/static"), name="static")
->>>>>>> 70d7f03 (cost estimation integrated)
