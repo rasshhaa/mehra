@@ -8,3 +8,5 @@ inference-sdk
 librosa
 numpy
 firebase-admin
+transformers
+torch

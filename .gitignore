@@ -13,3 +13,9 @@ dist/
 build/
 backend/.venv/
 .venv/
+.env
+backend/.venv/
+**/__pycache__/
+storage/uploads/*
+storage/reports/*
+*serviceAccountKey*.json
