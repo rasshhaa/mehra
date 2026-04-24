@@ -25,13 +25,32 @@ from firebase_admin import credentials, firestore
 import threading   
 import glob
 
-load_dotenv()
 
+load_dotenv()
+def _safe_firebase_write(collection: str, data: dict):
+    """Write to Firebase only if connected, silently skip if not."""
+    if db is None:
+        return
+    try:
+        db.collection(collection).add({
+            **data,
+            "createdAt": firestore.SERVER_TIMESTAMP,
+        })
+    except Exception as e:
+        print(f"⚠️ Firebase save failed: {e}")
 # ── Firebase ──────────────────────────────────────────────────────────────────
-cred = credentials.Certificate("serviceAccountKey.json")
-firebase_admin.initialize_app(cred)
-db = firestore.client()
-print("✅ Firebase Connected!")
+# ── Firebase ──────────────────────────────────────────────────────────────────
+db = None
+try:
+    if not firebase_admin._apps:
+        cred = credentials.Certificate("serviceAccountKey.json")
+        firebase_admin.initialize_app(cred)
+    db = firestore.client()
+    print("✅ Firebase Connected!")
+except Exception as e:
+    print(f"⚠️ Firebase init failed: {e}")
+    print("⚠️ Running without Firebase — inspections will work but won't be saved to Firestore")
+    db = None
 
 app = FastAPI(title="AI Vehicle Inspection API")
 
@@ -438,6 +457,66 @@ def _convert_to_wav(input_path: str, target_sr: int) -> str:
     return wav_path
 
 
+def _build_engine_result(
+    verdict: Optional[str] = None,
+    is_knock: Optional[str] = None,
+    confidence: Optional[str] = None,
+    duration: Optional[str] = None,
+):
+    if not verdict or not verdict.strip():
+        return None
+    return {
+        "verdict": verdict.strip(),
+        "is_knock": (is_knock or "").strip().lower() in {"true", "1", "yes", "knock", "knocking"},
+        "confidence": float(confidence or 0),
+        "duration_s": float(duration or 0),
+    }
+
+
+async def _analyze_engine_upload(audio: UploadFile) -> dict:
+    try:
+        import librosa, torch
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Audio libraries not installed.")
+
+    extractor, model, labels, target_sr = _get_engine_model()
+    suffix = os.path.splitext(audio.filename or "audio.webm")[-1].lower() or ".webm"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        shutil.copyfileobj(audio.file, tmp)
+        raw_path = tmp.name
+
+    wav_path = None
+    try:
+        try:
+            wav_path = _convert_to_wav(raw_path, target_sr)
+        except FileNotFoundError:
+            wav_path = raw_path
+        waveform, _ = librosa.load(wav_path, sr=target_sr, mono=True)
+        waveform    = waveform.astype("float32")
+        duration_s  = round(len(waveform) / target_sr, 2)
+        inputs      = extractor(waveform, sampling_rate=target_sr, return_tensors="pt")
+        with torch.no_grad():
+            logits = model(**inputs).logits
+        probs     = torch.softmax(logits, dim=-1)[0]
+        scores    = {labels[i]: float(probs[i]) for i in range(len(probs))}
+        top_label = max(scores, key=scores.get)
+        return {
+            "verdict": top_label,
+            "is_knock": _label_is_knock(top_label),
+            "confidence": round(scores[top_label] * 100, 2),
+            "scores": [{"label": k, "score": round(v, 6)} for k, v in scores.items()],
+            "model": "cxlrd/revix-AST-engine-knock",
+            "sample_rate": target_sr,
+            "audio_file": audio.filename,
+            "duration_s": duration_s,
+        }
+    finally:
+        for path in (raw_path, wav_path):
+            if path and os.path.exists(path):
+                try: os.remove(path)
+                except: pass
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # LIVE CAMERA STATE
 # ─────────────────────────────────────────────────────────────────────────────
@@ -533,7 +612,7 @@ async def ai_analysis_endpoint(req: AIAnalysisRequest):
     overall_status = req.overall_status
     if not overall_status:
         ut = req.unique_defect_types or len({d[0].lower() for d in defects_norm})
-        overall_status = "PASS" if ut == 0 else "ATTENTION" if ut <= 2 else "FAIL"
+        overall_status = "FAIL" if req.engine_result and req.engine_result.get("is_knock") else "PASS" if ut == 0 else "ATTENTION" if ut <= 2 else "FAIL"
     try:
         result = generate_ai_analysis(
             defects=defects_norm, vehicle_info=req.vehicle_info,
@@ -547,45 +626,11 @@ async def ai_analysis_endpoint(req: AIAnalysisRequest):
 @app.post("/analyze-engine")
 async def analyze_engine(audio: UploadFile = File(...)):
     try:
-        import librosa, torch
-    except ImportError:
-        raise HTTPException(status_code=503, detail="Audio libraries not installed.")
-    extractor, model, labels, target_sr = _get_engine_model()
-    suffix = os.path.splitext(audio.filename or "audio.webm")[-1].lower() or ".webm"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        shutil.copyfileobj(audio.file, tmp)
-        raw_path = tmp.name
-    wav_path = None
-    try:
-        try:
-            wav_path = _convert_to_wav(raw_path, target_sr)
-        except FileNotFoundError:
-            wav_path = raw_path
-        waveform, _ = librosa.load(wav_path, sr=target_sr, mono=True)
-        waveform    = waveform.astype("float32")
-        duration_s  = round(len(waveform) / target_sr, 2)
-        inputs      = extractor(waveform, sampling_rate=target_sr, return_tensors="pt")
-        with torch.no_grad():
-            logits = model(**inputs).logits
-        probs     = torch.softmax(logits, dim=-1)[0]
-        scores    = {labels[i]: float(probs[i]) for i in range(len(probs))}
-        top_label = max(scores, key=scores.get)
-        return {
-            "verdict": top_label, "is_knock": _label_is_knock(top_label),
-            "confidence": round(scores[top_label] * 100, 2),
-            "scores": [{"label": k, "score": round(v, 6)} for k, v in scores.items()],
-            "model": "cxlrd/revix-AST-engine-knock",
-            "sample_rate": target_sr, "audio_file": audio.filename, "duration_s": duration_s,
-        }
+        return await _analyze_engine_upload(audio)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Audio analysis failed: {str(e)}")
-    finally:
-        for path in (raw_path, wav_path):
-            if path and os.path.exists(path):
-                try: os.remove(path)
-                except: pass
 
 
 @app.post("/detect-live")
@@ -655,29 +700,22 @@ async def finalize_live_detection(
         "vin": vin or "Not Provided", "make": make or "Not Provided",
         "model": model or "Not Provided", "year": year or "Not Provided", "mileage": mileage or "Not Provided"
     }
-    engine_result = None
-    if engine_verdict:
-        engine_result = {
-            "verdict": engine_verdict, "is_knock": (engine_is_knock or "").lower() == "true",
-            "confidence": float(engine_confidence or 0), "duration_s": float(engine_duration or 0)
-        }
+    engine_result = _build_engine_result(engine_verdict, engine_is_knock, engine_confidence, engine_duration)
     ut = len(captured_defect_types)
-    overall_status = "PASS" if ut == 0 else "ATTENTION" if ut <= 2 else "FAIL"
+    overall_status = "FAIL" if engine_result and engine_result.get("is_knock") else "PASS" if ut == 0 else "ATTENTION" if ut <= 2 else "FAIL"
     ai_analysis = generate_ai_analysis(all_defects, vehicle_info, engine_result, overall_status)
     try:
         generate_report(all_defects, captured_frames, REPORT_PATH, vehicle_info,
                         engine_result=engine_result, ai_analysis=ai_analysis)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Report failed: {str(e)}")
-    try:
-        db.collection("inspections").add({
-            "vehicle_info": vehicle_info,
-            "defects": [{"part": d[0], "confidence": d[1]} for d in all_defects],
-            "engine_result": engine_result, "overall_status": overall_status,
-            "ai_analysis": ai_analysis, "createdAt": firestore.SERVER_TIMESTAMP,
-        })
-    except Exception as e:
-        print(f"⚠️ Firebase save failed: {str(e)}")
+    _safe_firebase_write("inspections", {
+        "vehicle_info":  vehicle_info,
+        "defects":       [{"part": d[0], "confidence": d[1]} for d in all_defects],
+        "engine_result": engine_result,
+        "overall_status": overall_status,
+        "ai_analysis":   ai_analysis,
+    })
     ann = [f"static/{os.path.basename(p)}" for p in captured_frames]
     captured_frames = []; captured_defect_types = set(); captured_all_defects = []
     return {
@@ -703,6 +741,7 @@ async def reset_live_detection():
 @app.post("/inspect")
 async def inspect_vehicle(
     files:             List[UploadFile] = File(...),
+    engine_audio:      Optional[UploadFile] = File(None),
     vin:               Optional[str]    = Form(None),
     make:              Optional[str]    = Form(None),
     model:             Optional[str]    = Form(None),
@@ -780,14 +819,14 @@ async def inspect_vehicle(
         "year":    year    or "Not Provided",
         "mileage": mileage or "Not Provided",
     }
-    engine_result = None
-    if engine_verdict and engine_verdict.strip():
-        engine_result = {
-            "verdict":    engine_verdict.strip(),
-            "is_knock":   (engine_is_knock or "").strip().lower() == "true",
-            "confidence": float(engine_confidence or 0),
-            "duration_s": float(engine_duration or 0),
-        }
+    engine_result = _build_engine_result(engine_verdict, engine_is_knock, engine_confidence, engine_duration)
+    if engine_audio and engine_audio.filename:
+        try:
+            engine_result = await _analyze_engine_upload(engine_audio)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Engine knock analysis failed: {str(e)}")
 
     # Unique defect types by part label (ignores severity suffix)
     unique_parts = {d["part"].lower() for d in all_merged_defects}
@@ -795,21 +834,27 @@ async def inspect_vehicle(
 
     # ── Firebase ──────────────────────────────────────────────────────────────
  # ── Firebase (non-blocking) ───────────────────────────────────────────────
-    overall_status = "PASS" if unique_defect_types == 0 else "ATTENTION" if unique_defect_types <= 2 else "FAIL"
+    overall_status = "FAIL" if engine_result and engine_result.get("is_knock") else "PASS" if unique_defect_types == 0 else "ATTENTION" if unique_defect_types <= 2 else "FAIL"
+    ai_analysis = generate_ai_analysis(
+        defects=all_merged_legacy,
+        vehicle_info=vehicle_info,
+        engine_result=engine_result,
+        overall_status=overall_status,
+    )
 
     def _save_inspect_to_firebase():
-        try:
-            db.collection("inspections").add({
-                "vehicle_info":    vehicle_info,
-                "inspection_type": inspection_type or "owner",
-                "defects": [{"part": d["part"], "severity": d["severity_class"], "confidence": d["confidence"]} for d in all_merged_defects],
-                "engine_result":   engine_result,
-                "overall_status":  overall_status,
-                "models_used":     [VEHICLE_MODEL_ID, SEVERITY_MODEL_ID],
-                "createdAt":       firestore.SERVER_TIMESTAMP,
-            })
-        except Exception as e:
-            print(f"⚠️ Firebase save failed: {str(e)}")
+        _safe_firebase_write("inspections", {
+            "vehicle_info":    vehicle_info,
+            "inspection_type": inspection_type or "owner",
+            "defects": [
+                {"part": d["part"], "severity": d["severity_class"], "confidence": d["confidence"]}
+                for d in all_merged_defects
+            ],
+            "engine_result":  engine_result,
+            "overall_status": overall_status,
+            "ai_analysis":    ai_analysis,
+            "models_used":    [VEHICLE_MODEL_ID, SEVERITY_MODEL_ID],
+        })
 
     threading.Thread(target=_save_inspect_to_firebase, daemon=True).start()
 
@@ -826,9 +871,12 @@ async def inspect_vehicle(
         "defects_enriched":     all_merged_defects,
         "annotated_images":     annotated_image_paths,
         "engine_result":        engine_result,
+        "ai_analysis":          ai_analysis,
+        "overall_status":       overall_status,
         "models_used":          {
             "model1": VEHICLE_MODEL_ID,
             "model2": SEVERITY_MODEL_ID,
+            "engine": engine_result.get("model") if engine_result else "not_tested",
         },
     }
 
@@ -858,7 +906,7 @@ async def generate_report_from_data(req: GenerateReportRequest):
     # Count unique parts (strip severity suffix after " — ")
     unique_parts  = {d[0].split(" — ")[0].lower() for d in defects_normalised}
     unique_types  = len(unique_parts)
-    overall_status = "PASS" if unique_types == 0 else "ATTENTION" if unique_types <= 2 else "FAIL"
+    overall_status = "FAIL" if engine_result and engine_result.get("is_knock") else "PASS" if unique_types == 0 else "ATTENTION" if unique_types <= 2 else "FAIL"
 
     ai_analysis = generate_ai_analysis(
         defects=defects_normalised, vehicle_info=vehicle_info,
@@ -962,6 +1010,17 @@ async def read_root():
         return FileResponse(frontend_path)
     return JSONResponse(status_code=404, content={"error": "index.html not found"})
 
+@app.get("/sw.js")
+async def get_service_worker():
+    sw_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "sw.js")
+    if not os.path.exists(sw_path):
+        raise HTTPException(status_code=404, detail="sw.js not found")
+    return FileResponse(
+        sw_path,
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"}
+    )
+
 
 @app.get("/report")
 def get_report():
@@ -1012,4 +1071,5 @@ async def debug_dual_model(file: UploadFile = File(...)):
             os.remove(temp_path)
 
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.mount("/static", StaticFiles(directory="../frontend/static"), name="static")

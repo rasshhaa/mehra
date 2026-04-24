@@ -10,7 +10,7 @@ import json
 # ─────────────────────────────────────────────────────────────────────────────
 # Groq AI integration
 # ─────────────────────────────────────────────────────────────────────────────
-GROQ_API_KEY = "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"
+GROQ_API_KEY = "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"
 GROQ_MODEL   = "llama-3.3-70b-versatile"
 GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -427,7 +427,11 @@ def generate_report(
 
     total_detected_types = len(detected_parts)
 
-    if total_detected_types == 0:
+    engine_knock_detected = bool(engine_result and engine_result.get("is_knock"))
+
+    if engine_knock_detected:
+        overall_status = "FAIL";      status_color = "#991b1b"
+    elif total_detected_types == 0:
         overall_status = "PASS";      status_color = "#166534"
     elif total_detected_types <= 2:
         overall_status = "ATTENTION"; status_color = "#d97706"
@@ -456,12 +460,12 @@ def generate_report(
         alignment=1, textColor=colors.HexColor("#1e3a8a")
     )))
     story.append(Paragraph(
-        f"AI-Powered Dual-Model Analysis · {datetime.now().strftime('%B %d, %Y at %H:%M')}",
+        f"AI-Powered Body + Engine Sound Analysis · {datetime.now().strftime('%B %d, %Y at %H:%M')}",
         ParagraphStyle("Sub", parent=styles["Normal"], fontSize=10, alignment=1,
                        textColor=colors.grey, spaceAfter=4)
     ))
     story.append(Paragraph(
-        "Part Detection (7-class YOLO) + Severity Detection (car-damage-severity-detection-cardd)",
+        "Physical Defect Detection (7-class YOLO + Severity Model) + Engine Knock Audio Classification",
         ParagraphStyle("Models", parent=styles["Normal"], fontSize=8, alignment=1,
                        textColor=colors.HexColor("#6b7280"), spaceAfter=20)
     ))
@@ -738,9 +742,9 @@ def generate_report(
 
     # ── Disclaimer ────────────────────────────────────────────────────────────
     story.append(Paragraph(
-        "<i>This report was generated using dual AI models: a 7-class part-detection model (Roboflow) "
-        "and a severity-detection model (car-damage-severity-detection-cardd), "
-        "with Groq LLaMA 3.3 for analysis. Results should be verified by a qualified technician.</i>",
+        "<i>This report was generated using the unified MEHRA inspection pipeline: physical defect detection "
+        "with a 7-class part model and severity model, engine sound knock classification, "
+        "and Groq LLaMA 3.3 for report analysis. Results should be verified by a qualified technician.</i>",
         ParagraphStyle("Disclaimer", parent=styles["Normal"],
                        fontSize=9, textColor=colors.grey, alignment=1, spaceBefore=20)
     ))
