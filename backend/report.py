@@ -6,11 +6,21 @@ from reportlab.lib import colors
 from datetime import datetime
 import os
 import json
+from dotenv import load_dotenv
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ENV_PATHS = [
+    os.path.join(_HERE, ".env"),
+    os.path.join(os.path.dirname(_HERE), ".env"),
+]
+for _env_path in _ENV_PATHS:
+    if os.path.exists(_env_path):
+        load_dotenv(_env_path, override=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Groq AI integration
 # ─────────────────────────────────────────────────────────────────────────────
-GROQ_API_KEY = "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"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL   = "llama-3.3-70b-versatile"
 GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -144,6 +154,9 @@ def _get_defect_type_label(part_key: str, confidence: float) -> str:
 
 
 def call_groq(prompt: str, system: str = "You are an expert vehicle inspector and automotive AI assistant.") -> str:
+    if not GROQ_API_KEY:
+        print("[Groq] GROQ_API_KEY missing; skipping AI call")
+        return ""
     try:
         import urllib.request
         payload = json.dumps({
