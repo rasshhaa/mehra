@@ -17,6 +17,8 @@ for _env_path in _ENV_PATHS:
     if os.path.exists(_env_path):
         load_dotenv(_env_path, override=True)
 
+from pii_redaction import redact_pii
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Groq AI integration
 # ─────────────────────────────────────────────────────────────────────────────
@@ -159,11 +161,13 @@ def call_groq(prompt: str, system: str = "You are an expert vehicle inspector an
         return ""
     try:
         import urllib.request
+        safe_system = redact_pii(system)
+        safe_prompt = redact_pii(prompt)
         payload = json.dumps({
             "model": GROQ_MODEL,
             "messages": [
-                {"role": "system", "content": system},
-                {"role": "user",   "content": prompt}
+                {"role": "system", "content": safe_system},
+                {"role": "user",   "content": safe_prompt}
             ],
             "max_tokens": 1400,
             "temperature": 0.4
@@ -491,18 +495,44 @@ def generate_report(
     mileage    = vehicle_info.get("mileage", "Not Provided")
     make_model = f"{make} {model_name}" if make != "Not Provided" else "Not Provided"
 
+    value_style = ParagraphStyle(
+        "InfoVal",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=9.5,
+        leading=11,
+        wordWrap="CJK",
+    )
+    label_style = ParagraphStyle(
+        "InfoLabel",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=10,
+        leading=11,
+    )
     info_table = Table(
-        [["VIN / Registration", vin, "Mileage", mileage],
-         ["Make / Model", make_model, "Year",   year]],
-        colWidths=[5*cm, 5*cm, 4*cm, 4*cm]
+        [
+            [
+                Paragraph("VIN / Registration", label_style),
+                Paragraph(str(vin), value_style),
+                Paragraph("Mileage", label_style),
+                Paragraph(str(mileage), value_style),
+            ],
+            [
+                Paragraph("Make / Model", label_style),
+                Paragraph(str(make_model), value_style),
+                Paragraph("Year", label_style),
+                Paragraph(str(year), value_style),
+            ],
+        ],
+        # Must stay within A4 content width (~17cm with 2cm margins).
+        colWidths=[4.1*cm, 6.1*cm, 3.0*cm, 3.8*cm]
     )
     info_table.setStyle(TableStyle([
         ('GRID',          (0,0),(-1,-1),1,   colors.grey),
         ('BACKGROUND',    (0,0),(-1, 0),colors.lightgrey),
-        ('FONTNAME',      (0,0),(-1,-1),'Helvetica'),
-        ('FONTSIZE',      (0,0),(-1,-1),10),
         ('ALIGN',         (0,0),(-1,-1),'LEFT'),
-        ('VALIGN',        (0,0),(-1,-1),'MIDDLE'),
+        ('VALIGN',        (0,0),(-1,-1),'TOP'),
         ('LEFTPADDING',   (0,0),(-1,-1),8),
         ('RIGHTPADDING',  (0,0),(-1,-1),8),
         ('TOPPADDING',    (0,0),(-1,-1),6),

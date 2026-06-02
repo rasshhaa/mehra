@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Depends, Header
 from fastapi.responses import FileResponse, JSONResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,20 +10,53 @@ import subprocess
 import json
 import re
 import time
+import hashlib
 import tempfile
 import traceback
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Tuple
 from inference_sdk import InferenceHTTPClient
 from report import generate_report, generate_ai_analysis, GROQ_API_KEY as REPORT_GROQ_API_KEY
+from pii_redaction import redact_pii, blur_plates_and_faces, sanitize_groq_chat_payload
+from marketplace_listing import (
+    build_private_listing_doc,
+    build_public_listing_doc,
+    compute_health_score_from_records,
+    enrich_with_private_for_privileged,
+    normalize_plate,
+    project_listing,
+    run_all_marketplace_validations,
+    validate_contact_channel,
+    validate_notes,
+    validate_plate,
+    validate_price,
+    validate_vin,
+    vehicle_owned_by_user,
+)
+from marketplace_storage import (
+    find_latest_car_life_report,
+    process_and_upload_listing_photo,
+    save_listing_photo_local,
+    upload_file_to_storage,
+    validate_owner_photo_urls,
+)
+import marketplace_local
+import blockchain as security_ledger
 import base64
 from dotenv import load_dotenv
 from garage_accident_report import generate_accident_service_report
-#from garage_report import generate_garage_service_report
-#from carlife_report import generate_car_life_report
+from garage_report import generate_garage_service_report
+from carlife_report import generate_car_life_report
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, auth
+from firestore_pool import (
+    init_firestore_pool,
+    get_active_firestore,
+    get_primary_firestore,
+    firestore_with_failover,
+    is_quota_error as firestore_is_quota_error,
+)
 import threading   
 import glob
 import requests
@@ -44,25 +77,171 @@ def _safe_firebase_write(collection: str, data: dict):
     if db is None:
         return
     try:
-        db.collection(collection).add({
-            **data,
-            "createdAt": firestore.SERVER_TIMESTAMP,
-        })
+        def _write(client):
+            client.collection(collection).add({
+                **data,
+                "createdAt": firestore.SERVER_TIMESTAMP,
+            })
+
+        firestore_with_failover(_write)
     except Exception as e:
-        print(f"⚠️ Firebase save failed: {e}")
-# ── Firebase ──────────────────────────────────────────────────────────────────
+        print(f"[WARN] Firebase save failed: {e}")
 # ── Firebase ──────────────────────────────────────────────────────────────────
 db = None
+firestore_ok = False
+_firebase_init_error: Optional[str] = None
+_FIREBASE_PRIMARY_PROJECT_ID = os.getenv("FIREBASE_PRIMARY_PROJECT_ID", "mehra-b3a7c").strip()
+
+
+def _service_account_project_id(path: str) -> Optional[str]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return str(json.load(f).get("project_id") or "").strip() or None
+    except Exception:
+        return None
+
+
+def _validate_primary_service_account(cred_path: str) -> None:
+    """Auth tokens come from the primary Firebase web app — Admin key must match that project."""
+    pid = _service_account_project_id(cred_path)
+    if not pid:
+        return
+    if pid != _FIREBASE_PRIMARY_PROJECT_ID:
+        raise RuntimeError(
+            f"serviceAccountKey.json is for project '{pid}' but login uses '{_FIREBASE_PRIMARY_PROJECT_ID}'. "
+            f"Download the service account JSON from Firebase Console → {_FIREBASE_PRIMARY_PROJECT_ID} "
+            f"→ Project settings → Service accounts → Generate new private key, save as serviceAccountKey.json. "
+            f"Keep mehrapt2 key only in serviceAccountKey-secondary.json."
+        )
+
+
 try:
-    if not firebase_admin._apps:
-        cred = credentials.Certificate("serviceAccountKey.json")
-        firebase_admin.initialize_app(cred)
-    db = firestore.client()
-    print("✅ Firebase Connected!")
+    _cred_path = os.path.join(_HERE, "serviceAccountKey.json")
+    _cred_secondary = os.getenv("FIREBASE_SERVICE_ACCOUNT_SECONDARY", "").strip()
+    if _cred_secondary and not os.path.isabs(_cred_secondary):
+        _cred_secondary = os.path.join(_HERE, _cred_secondary)
+    _validate_primary_service_account(_cred_path)
+    init_firestore_pool(_cred_path, _cred_secondary or None)
+    db = get_active_firestore()
 except Exception as e:
-    print(f"⚠️ Firebase init failed: {e}")
-    print("⚠️ Running without Firebase — inspections will work but won't be saved to Firestore")
+    _firebase_init_error = str(e)
+    print(f"[WARN] Firebase init failed: {e}")
     db = None
+
+
+def _sync_db_from_pool():
+    """Keep module-level db in sync after pool failover."""
+    global db
+    try:
+        db = get_active_firestore()
+    except Exception:
+        pass
+    return db
+
+
+def _auth_profile_db():
+    """Use primary DB for auth role/profile checks to avoid role 403 during failover."""
+    try:
+        p = get_primary_firestore()
+        if p is not None:
+            return p
+    except Exception:
+        pass
+    return db
+
+
+def _ensure_firestore_client():
+    """Best-effort lazy init/re-init for Firestore client."""
+    global db, _firebase_init_error
+    if db is not None:
+        return db
+    try:
+        _cred_path = os.path.join(_HERE, "serviceAccountKey.json")
+        _cred_secondary = os.getenv("FIREBASE_SERVICE_ACCOUNT_SECONDARY", "").strip()
+        if _cred_secondary and not os.path.isabs(_cred_secondary):
+            _cred_secondary = os.path.join(_HERE, _cred_secondary)
+        init_firestore_pool(_cred_path, _cred_secondary or None)
+        db = get_active_firestore()
+        _firebase_init_error = None
+        return db
+    except Exception as e:
+        _firebase_init_error = str(e)
+        print(f"[WARN] Firestore lazy init failed: {e}")
+        db = None
+        return None
+
+
+_admin_sdk_usable = False
+_role_fallback_cache: Dict[str, str] = {}
+
+
+def _is_admin_credential_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return "invalid_grant" in msg or "invalid jwt" in msg or "jwt signature" in msg
+
+
+def _probe_firestore(timeout: float = 12.0) -> bool:
+    """Ping Firestore; sets _admin_sdk_usable. Safe to call at startup or from /health/firebase."""
+    global _admin_sdk_usable
+    if db is None:
+        _admin_sdk_usable = False
+        return False
+    try:
+        def _ping():
+            list(db.collection("marketplace").limit(1).stream())
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(_ping).result(timeout=timeout)
+        _admin_sdk_usable = True
+        return True
+    except Exception as e:
+        _admin_sdk_usable = False
+        err = str(e)
+        if _is_admin_credential_error(e):
+            print(
+                "[WARN] Firebase service account rejected (Invalid JWT). "
+                "Regenerate serviceAccountKey.json: Firebase Console → mehra-b3a7c → "
+                "Project settings → Service accounts → Generate new private key. "
+                "Marketplace will use local JSON until fixed."
+            )
+        else:
+            print(f"[WARN] Firestore probe failed: {e}")
+        return False
+
+
+# Default local marketplace so publish works when the service account JWT is invalid.
+# Set USE_FIRESTORE=1 in .env after replacing serviceAccountKey.json to use cloud Firestore.
+_use_firestore_env = os.getenv("USE_FIRESTORE", "").strip().lower() in ("1", "true", "yes")
+firestore_ok = False
+if db is None:
+    print("[WARN] Firebase client not initialized — marketplace uses local JSON store")
+elif _use_firestore_env:
+    print(
+        "[INFO] USE_FIRESTORE=1 — probing Firestore on startup; "
+        "marketplace uses local JSON until credentials verify"
+    )
+else:
+    print(
+        "[WARN] Marketplace local mode (backend/data/marketplace_store.json). "
+        "Fix serviceAccountKey.json then set USE_FIRESTORE=1 to sync to Firestore."
+    )
+
+
+def _marketplace_use_local() -> bool:
+    if os.getenv("MARKETPLACE_LOCAL", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    if os.getenv("MARKETPLACE_LOCAL", "").strip().lower() in ("0", "false", "no"):
+        return False
+    if _use_firestore_env:
+        return db is None or not _admin_sdk_usable
+    return True
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIR = os.path.normpath(os.path.join(BASE_DIR, "..", "frontend"))
+FRONTEND_STATIC_DIR = os.path.join(FRONTEND_DIR, "static")
+INDEX_HTML_PATH = os.path.join(FRONTEND_DIR, "index.html")
+_INDEX_HTML_BYTES: Optional[bytes] = None
+_INDEX_HTML_MTIME: Optional[float] = None
 
 app = FastAPI(title="AI Vehicle Inspection API")
 
@@ -73,6 +252,237 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _index_html_bytes() -> Optional[bytes]:
+    """Read index.html once — avoids slow repeat reads (e.g. OneDrive-synced folders)."""
+    global _INDEX_HTML_BYTES, _INDEX_HTML_MTIME
+    if not os.path.isfile(INDEX_HTML_PATH):
+        return None
+    try:
+        mtime = os.path.getmtime(INDEX_HTML_PATH)
+        if _INDEX_HTML_BYTES is not None and _INDEX_HTML_MTIME == mtime:
+            return _INDEX_HTML_BYTES
+        with open(INDEX_HTML_PATH, "rb") as f:
+            _INDEX_HTML_BYTES = f.read()
+        _INDEX_HTML_MTIME = mtime
+    except OSError as e:
+        print(f"[WARN] Could not read index.html: {e}")
+        return None
+    return _INDEX_HTML_BYTES
+
+
+@app.get("/health")
+async def health_check():
+    return {
+        "ok": True,
+        "index_html": os.path.isfile(INDEX_HTML_PATH),
+        "firestore_ok": firestore_ok,
+        "marketplace_local": _marketplace_use_local(),
+    }
+
+
+@app.get("/health/firebase")
+async def health_firebase():
+    global firestore_ok
+    probed = await asyncio.to_thread(_probe_firestore) if db is not None else False
+    if _use_firestore_env:
+        firestore_ok = probed
+    return {
+        "firestore_ok": probed,
+        "marketplace_local": _marketplace_use_local(),
+        "use_firestore_env": _use_firestore_env,
+        "init_error": _firebase_init_error,
+        "hint": (
+            None
+            if probed
+            else "Download a new serviceAccountKey.json from Firebase Console (mehra-b3a7c), replace backend/serviceAccountKey.json, set USE_FIRESTORE=1 in .env, restart."
+        ),
+    }
+
+
+@app.on_event("startup")
+async def _warm_frontend_cache():
+    global firestore_ok
+    await asyncio.to_thread(_index_html_bytes)
+    if db is not None and _use_firestore_env:
+        ok = await asyncio.to_thread(lambda: _probe_firestore(12.0))
+        firestore_ok = ok
+        if ok:
+            print("[INFO] Firestore credentials OK — cloud marketplace enabled")
+        else:
+            print(
+                "[WARN] Firestore unavailable — marketplace uses local JSON "
+                "(backend/data/marketplace_store.json)"
+            )
+
+
+_VALID_APP_ROLES = frozenset(
+    {"owner", "garage", "insurance", "rta", "tasjeel", "marketplace", "public"}
+)
+_ROLE_ALIASES = {
+    "vehicle_owner": "owner",
+    "vehicle owner": "owner",
+    "car_owner": "owner",
+}
+
+
+def _normalize_role(raw: Optional[str]) -> str:
+    r = (raw or "").strip().lower()
+    return _ROLE_ALIASES.get(r, r)
+
+
+async def _resolve_role_for_auth(decoded: dict) -> str:
+    """Role from ID token, Auth custom claims, then Firestore profile/meta."""
+    role = _normalize_role(decoded.get("role"))
+    if role:
+        return role
+
+    uid = decoded.get("uid")
+    if uid and uid in _role_fallback_cache:
+        return _role_fallback_cache[uid]
+
+    if uid and _admin_sdk_usable:
+        try:
+            user_rec = await asyncio.wait_for(
+                asyncio.to_thread(auth.get_user, uid),
+                timeout=6.0,
+            )
+            role = _normalize_role((user_rec.custom_claims or {}).get("role"))
+            if role:
+                return role
+        except Exception:
+            pass
+
+    profile_db = _auth_profile_db()
+    if uid and profile_db is not None and _admin_sdk_usable:
+        try:
+            meta_snap = await asyncio.wait_for(
+                asyncio.to_thread(profile_db.document(f"users/{uid}/profile/meta").get),
+                timeout=6.0,
+            )
+            if meta_snap.exists:
+                role = _normalize_role((meta_snap.to_dict() or {}).get("role"))
+                if role:
+                    return role
+        except Exception:
+            pass
+
+    return ""
+
+
+def require_role(allowed_roles: list[str]):
+    async def _checker(authorization: Optional[str] = Header(None)):
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=403, detail="Missing or invalid Authorization header")
+        id_token = authorization[7:].strip()
+        if not id_token:
+            raise HTTPException(status_code=403, detail="Missing or invalid Authorization header")
+        try:
+            decoded = auth.verify_id_token(id_token)
+        except Exception:
+            raise HTTPException(status_code=403, detail="Invalid or expired token")
+        role = await _resolve_role_for_auth(decoded)
+        allowed = {_normalize_role(r) for r in allowed_roles}
+        if role not in allowed:
+            raise HTTPException(
+                status_code=403,
+                detail="Insufficient role permissions — sign out, sign in again as Vehicle Owner, or call POST /sync-role-claims",
+            )
+        decoded["role"] = role
+        return decoded
+    return _checker
+
+
+async def _resolve_user_role(decoded: dict) -> str:
+    """Role from ID token custom claim, falling back to Firestore profile/meta."""
+    role = await _resolve_role_for_auth(decoded)
+    return role or "public"
+
+
+class SyncRoleClaimsBody(BaseModel):
+    role: Optional[str] = None
+
+
+@app.post("/sync-role-claims")
+async def sync_role_claims(
+    body: Optional[SyncRoleClaimsBody] = None,
+    authorization: Optional[str] = Header(None),
+):
+    """Mirror Firestore profile role onto the Firebase ID token custom claim."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=403, detail="Missing or invalid Authorization header")
+    id_token = authorization[7:].strip()
+    try:
+        decoded = auth.verify_id_token(id_token)
+    except Exception:
+        raise HTTPException(status_code=403, detail="Invalid or expired token")
+
+    role = ""
+    profile_found = False
+    profile_db = _auth_profile_db()
+    if profile_db is not None and _admin_sdk_usable:
+        try:
+            meta_snap = await asyncio.wait_for(
+                asyncio.to_thread(
+                    profile_db.document(f"users/{decoded['uid']}/profile/meta").get
+                ),
+                timeout=6.0,
+            )
+            profile_found = meta_snap.exists
+            if profile_found:
+                role = _normalize_role((meta_snap.to_dict() or {}).get("role"))
+        except Exception:
+            pass
+
+    if not role and body and body.role:
+        role = _normalize_role(body.role)
+        if role not in _VALID_APP_ROLES or role == "public":
+            raise HTTPException(status_code=400, detail="Invalid role in request body")
+
+    if not role:
+        if not profile_found and not (body and body.role):
+            raise HTTPException(
+                status_code=404,
+                detail="User profile not found — pass {\"role\":\"owner\"} in body if you use the owner portal",
+            )
+        raise HTTPException(status_code=400, detail="No role on profile")
+
+    uid = str(decoded.get("uid") or "")
+    if not _admin_sdk_usable:
+        if uid:
+            _role_fallback_cache[uid] = role
+        return {
+            "success": True,
+            "role": role,
+            "claimsSynced": False,
+            "hint": "serviceAccountKey.json invalid — role cached for this server session only; regenerate key for token claims",
+        }
+
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(auth.set_custom_user_claims, uid, {"role": role}),
+            timeout=8.0,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Auth admin timed out — check serviceAccountKey.json / network",
+        )
+    except Exception as e:
+        if _is_admin_credential_error(e):
+            if uid:
+                _role_fallback_cache[uid] = role
+            return {
+                "success": True,
+                "role": role,
+                "claimsSynced": False,
+                "hint": "Invalid service account JWT — regenerate serviceAccountKey.json from Firebase Console",
+            }
+        raise HTTPException(status_code=503, detail=f"Could not set role claim: {e}")
+    if uid:
+        _role_fallback_cache[uid] = role
+    return {"success": True, "role": role, "claimsSynced": True}
 
 # ── Roboflow clients ──────────────────────────────────────────────────────────
 # Both models share the same API key and base URL
@@ -92,7 +502,7 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 UPLOAD_DIR = "uploads"
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "static")
+STATIC_DIR = FRONTEND_STATIC_DIR
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 
@@ -111,6 +521,20 @@ def _get_groq_api_key() -> str:
     Resolve Groq key at runtime so reload/cwd quirks don't freeze an empty value.
     """
     return (os.getenv("GROQ_API_KEY") or REPORT_GROQ_API_KEY or "").strip()
+
+
+def _groq_chat_post(payload: dict, api_key: str, timeout: int = 25):
+    """Synchronous Groq HTTP call — use asyncio.to_thread from async routes so the event loop stays responsive."""
+    safe_payload = sanitize_groq_chat_payload(payload)
+    return requests.post(
+        GROQ_URL,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        data=json.dumps(safe_payload),
+        timeout=timeout,
+    )
 
 
 def _get_google_maps_api_key() -> str:
@@ -862,6 +1286,35 @@ def _convert_to_wav(input_path: str, target_sr: int) -> str:
     return wav_path
 
 
+def preprocess_audio(wav_path: str) -> str:
+    """Denoise and band-pass engine audio before AST knock detection."""
+    try:
+        import librosa
+        import noisereduce as nr
+        import numpy as np
+        from scipy.io import wavfile
+        from scipy.signal import butter, lfilter
+
+        signal, sr = librosa.load(wav_path, sr=22050, mono=True)
+        reduced = nr.reduce_noise(y=signal, sr=sr)
+
+        nyq = 0.5 * sr
+        low = 1000 / nyq
+        high = 5000 / nyq
+        b, a = butter(4, [low, high], btype="band")
+        filtered = lfilter(b, a, reduced)
+
+        out_fd, out_path = tempfile.mkstemp(suffix="_cleaned.wav")
+        os.close(out_fd)
+        clipped = np.clip(filtered, -1.0, 1.0)
+        wavfile.write(out_path, sr, (clipped * 32767).astype(np.int16))
+        return out_path
+    except Exception as e:
+        # Keep analysis available even if optional denoise deps are missing.
+        print(f"[analyze-engine] preprocess fallback: {e}")
+        return wav_path
+
+
 def _build_engine_result(
     verdict: Optional[str] = None,
     is_knock: Optional[str] = None,
@@ -891,12 +1344,14 @@ async def _analyze_engine_upload(audio: UploadFile) -> dict:
         raw_path = tmp.name
 
     wav_path = None
+    cleaned_path = None
     try:
         try:
             wav_path = _convert_to_wav(raw_path, target_sr)
         except FileNotFoundError:
             wav_path = raw_path
-        waveform, _ = librosa.load(wav_path, sr=target_sr, mono=True)
+        cleaned_path = preprocess_audio(wav_path)
+        waveform, _ = librosa.load(cleaned_path, sr=target_sr, mono=True)
         waveform    = waveform.astype("float32")
         duration_s  = round(len(waveform) / target_sr, 2)
         inputs      = extractor(waveform, sampling_rate=target_sr, return_tensors="pt")
@@ -916,7 +1371,7 @@ async def _analyze_engine_upload(audio: UploadFile) -> dict:
             "duration_s": duration_s,
         }
     finally:
-        for path in (raw_path, wav_path):
+        for path in (raw_path, wav_path, cleaned_path):
             if path and os.path.exists(path):
                 try: os.remove(path)
                 except: pass
@@ -977,13 +1432,19 @@ class MulkiyaExtractRequest(BaseModel):
 
 
 class GarageReportRequest(BaseModel):
+    vehicle_plate:      str  = ""
+    service_type:       str  = ""
+    parts_replaced:     list = []
+    technician_name:    str  = ""
+    total_cost:         str  = ""
+    date_completed:     str  = ""
+    garage_name:        str  = ""
     appointment:        dict = {}
     vehicle_info:       dict = {}
     services_completed: list = []
     defects_from_ai:    list = []
     insurance_approved: bool = False
     approved_amount:    str  = ""
-    technician_name:    str  = ""
     technician_notes:   str  = ""
 
 
@@ -1003,11 +1464,66 @@ class AccidentServiceReportRequest(BaseModel):
 
 
 class CarLifeReportRequest(BaseModel):
-    vehicle_info: dict = {}
-    inspections:  list = []
-    services:     list = []
-    appointments: list = []
-    owner_name:   str  = ""
+    vehicle_plate:       str   = ""
+    owner_name:          str   = ""
+    total_inspections:   int   = 0
+    accidents:           list  = []
+    avg_health_score:    float = 0
+    registration_expiry: str   = ""
+    mileage_estimate:    str   = ""
+    vehicle_info:        dict  = {}
+    inspections:         list  = []
+    services:            list  = []
+    appointments:        list  = []
+
+
+class CarLifeGroqSummaryRequest(BaseModel):
+    """Structured stats only — server builds the LLM prompt and redacts before Groq (no browser-side model calls)."""
+
+    vehicle_name: str = ""
+    owner_display: str = ""
+    total_inspections: int = 0
+    passed_clean: int = 0
+    defects: int = 0
+    knock_count: int = 0
+    garage_visits: int = 0
+    health_score: int = 0
+
+
+class MarketplaceListingSubmit(BaseModel):
+    """Owner publish payload — server merges cross-stakeholder validation booleans."""
+
+    listing_id: Optional[str] = None
+    uid: str
+    vehicle: str = ""
+    plateNumber: str = ""
+    vin: str = ""
+    price: float = 0
+    contact: str = ""
+    notes: str = ""
+    healthScore: Optional[float] = None
+    inspectionCount: int = 0
+    carLifeUrl: Optional[str] = None
+    carLifeFileName: Optional[str] = None
+    photoUrls: Optional[List[str]] = None
+    photosPending: bool = False
+    pendingPhotoCount: int = 0
+    status: str = "active"
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
+
+
+class MarketplaceValidationContext(BaseModel):
+    """Same signals used at listing submit for stakeholder validation endpoints."""
+
+    plateNumber: str = ""
+    inspectionCount: int = 0
+    healthScore: Optional[float] = None
+    notes: str = ""
+
+
+class MarketplaceListingPatch(BaseModel):
+    status: Optional[str] = None
 
 
 class GaragePlacesRequest(BaseModel):
@@ -1035,6 +1551,13 @@ def _to_legacy_defects(merged: list) -> list:
     return [(d["label"], d["confidence"]) for d in merged]
 
 
+def _vehicle_info_for_llm(info: dict) -> dict:
+    """Redact owner-supplied vehicle form fields before any Groq-backed analysis."""
+    if not info:
+        return {}
+    return {str(k): redact_pii("" if v is None else str(v)) for k, v in info.items()}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ENDPOINTS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1054,7 +1577,7 @@ async def ai_analysis_endpoint(req: AIAnalysisRequest):
         overall_status = "FAIL" if req.engine_result and req.engine_result.get("is_knock") else "PASS" if ut == 0 else "ATTENTION" if ut <= 2 else "FAIL"
     try:
         result = generate_ai_analysis(
-            defects=defects_norm, vehicle_info=req.vehicle_info,
+            defects=defects_norm, vehicle_info=_vehicle_info_for_llm(req.vehicle_info or {}),
             engine_result=req.engine_result, overall_status=overall_status
         )
         return {"success": True, "ai_analysis": result, "overall_status": overall_status}
@@ -1142,7 +1665,7 @@ async def finalize_live_detection(
     engine_result = _build_engine_result(engine_verdict, engine_is_knock, engine_confidence, engine_duration)
     ut = len(captured_defect_types)
     overall_status = "FAIL" if engine_result and engine_result.get("is_knock") else "PASS" if ut == 0 else "ATTENTION" if ut <= 2 else "FAIL"
-    ai_analysis = generate_ai_analysis(all_defects, vehicle_info, engine_result, overall_status)
+    ai_analysis = generate_ai_analysis(all_defects, _vehicle_info_for_llm(vehicle_info), engine_result, overall_status)
     try:
         generate_report(all_defects, captured_frames, REPORT_PATH, vehicle_info,
                         engine_result=engine_result, ai_analysis=ai_analysis)
@@ -1216,6 +1739,11 @@ async def inspect_vehicle(
             shutil.copyfileobj(file.file, buf)
 
         try:
+            blur_plates_and_faces(input_path)
+        except Exception as _blur_e:
+            print(f"[PII] plate/face blur skipped: {_blur_e}")
+
+        try:
             # ── Run both models in parallel ───────────────────────────────────
             m1_result, m2_result = await _run_both_models(input_path)
 
@@ -1276,7 +1804,7 @@ async def inspect_vehicle(
     overall_status = "FAIL" if engine_result and engine_result.get("is_knock") else "PASS" if unique_defect_types == 0 else "ATTENTION" if unique_defect_types <= 2 else "FAIL"
     ai_analysis = generate_ai_analysis(
         defects=all_merged_legacy,
-        vehicle_info=vehicle_info,
+        vehicle_info=_vehicle_info_for_llm(vehicle_info),
         engine_result=engine_result,
         overall_status=overall_status,
     )
@@ -1348,7 +1876,7 @@ async def generate_report_from_data(req: GenerateReportRequest):
     overall_status = "FAIL" if engine_result and engine_result.get("is_knock") else "PASS" if unique_types == 0 else "ATTENTION" if unique_types <= 2 else "FAIL"
 
     ai_analysis = generate_ai_analysis(
-        defects=defects_normalised, vehicle_info=vehicle_info,
+        defects=defects_normalised, vehicle_info=_vehicle_info_for_llm(vehicle_info),
         engine_result=engine_result, overall_status=overall_status
     )
     try:
@@ -1360,8 +1888,15 @@ async def generate_report_from_data(req: GenerateReportRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
 
+    seal = _seal_pdf_if_exists(
+        REPORT_PATH, "inspection_report",
+        doc_id=(vehicle_info.get("plate") or vehicle_info.get("vin") or None),
+        file_name="inspection_report.pdf",
+    )
+
     return {
         "message":                "Report generated with AI analysis",
+        "ledger_seal":            ({"hash": seal["data"]["file_hash"], "block": seal["index"]} if seal else None),
         "image_count":            req.image_count,
         "total_defects_detected": len(defects_normalised),
         "unique_defect_types":    unique_types,
@@ -1388,49 +1923,44 @@ async def extract_mulkiya_groq(req: MulkiyaExtractRequest):
         "engineNumber, make, model, year, vehicleType, bodyType, color, "
         "unladenWeight, grossWeight, cylinders, fuelType, seats"
     )
-
     last_error = "Unknown Groq error"
     for model in GROQ_VISION_MODELS:
-        try:
-            payload = {
-                "model": model,
-                "messages": [{
-                    "role": "user",
-                    "content": [{"type": "text", "text": prompt}] + [
-                        {"type": "image_url", "image_url": {"url": img, "detail": "high"}}
-                        for img in req.images
-                    ]
-                }],
-                "temperature": 0.0,
-                "max_tokens": 1024
-            }
-            res = requests.post(
-                GROQ_URL,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {groq_api_key}"
-                },
-                data=json.dumps(payload),
-                timeout=20
-            )
-            if not res.ok:
-                body_preview = (res.text or "")[:200]
-                if res.status_code == 401 or "invalid_api_key" in body_preview.lower():
-                    last_error = "Groq API key is invalid or expired (HTTP 401 / invalid_api_key)"
-                else:
-                    last_error = f"HTTP {res.status_code}: {body_preview}"
-                continue
+        for attempt in range(2):
+            try:
+                payload = {
+                    "model": model,
+                    "messages": [{
+                        "role": "user",
+                        "content": [{"type": "text", "text": prompt}] + [
+                            {"type": "image_url", "image_url": {"url": img, "detail": "high"}}
+                            for img in req.images
+                        ]
+                    }],
+                    "temperature": 0.0,
+                    "max_tokens": 1024
+                }
+                res = await asyncio.to_thread(_groq_chat_post, payload, groq_api_key, 45)
+                if not res.ok:
+                    body_preview = (res.text or "")[:200]
+                    if res.status_code == 401 or "invalid_api_key" in body_preview.lower():
+                        last_error = "Groq API key is invalid or expired (HTTP 401 / invalid_api_key)"
+                    else:
+                        last_error = f"HTTP {res.status_code}: {body_preview}"
+                    continue
 
-            data = res.json()
-            text = (data.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
-            if not text:
-                last_error = f"Empty response from {model}"
+                data = res.json()
+                text = (data.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
+                if not text:
+                    last_error = f"Empty response from {model}"
+                    continue
+                clean = re.sub(r"```json\s*|```\s*", "", text, flags=re.IGNORECASE).strip()
+                return {"success": True, "model": model, "content": clean}
+            except Exception as e:
+                msg = str(e)
+                if "timed out" in msg.lower():
+                    msg = f"Timed out contacting Groq ({model})"
+                last_error = msg
                 continue
-            clean = re.sub(r"```json\s*|```\s*", "", text, flags=re.IGNORECASE).strip()
-            return {"success": True, "model": model, "content": clean}
-        except Exception as e:
-            last_error = str(e)
-            continue
 
     raise HTTPException(status_code=502, detail=f"Groq extraction failed: {last_error}")
 
@@ -1545,15 +2075,7 @@ Input:
     }
 
     try:
-        res = requests.post(
-            GROQ_URL,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {groq_api_key}",
-            },
-            data=json.dumps(payload),
-            timeout=35,
-        )
+        res = await asyncio.to_thread(_groq_chat_post, payload, groq_api_key, 35)
     except requests.RequestException as e:
         return {**_accident_intake_defaults(), "ok": False, "error": str(e)}
 
@@ -1693,6 +2215,27 @@ class PayRtaFineRequest(BaseModel):
     owner_uid: Optional[str] = None
 
 
+class MarketplaceChatSendRequest(BaseModel):
+    listingId: str
+    message: str
+    sellerUid: Optional[str] = None
+    buyerUid: Optional[str] = None
+    vehicle: Optional[str] = None
+
+
+class MarketplaceChatListRequest(BaseModel):
+    listingId: Optional[str] = None
+
+
+class InspectionHistoryUpsertRequest(BaseModel):
+    id: Optional[str] = None
+    record: Dict[str, Any]
+
+
+class AppointmentsListRequest(BaseModel):
+    ownerId: Optional[str] = None
+
+
 @app.post("/pay-rta-fine")
 async def pay_rta_fine(req: PayRtaFineRequest):
     """
@@ -1704,7 +2247,7 @@ async def pay_rta_fine(req: PayRtaFineRequest):
         raise HTTPException(status_code=503, detail="Database unavailable (Firebase not configured)")
 
     ref = db.collection("rtaFines").document(req.fine_id.strip())
-    snap = ref.get()
+    snap = await asyncio.to_thread(ref.get)
     if not snap.exists:
         raise HTTPException(status_code=404, detail="Fine not found")
     data = snap.to_dict() or {}
@@ -1726,13 +2269,14 @@ async def pay_rta_fine(req: PayRtaFineRequest):
     import uuid
     txn = f"AutoVault-PAY-{uuid.uuid4().hex[:14].upper()}"
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    ref.update(
+    await asyncio.to_thread(
+        ref.update,
         {
             "status": "paid",
             "paidAt": now_iso,
             "paymentChannel": "mehra_demo_gateway",
             "transactionId": txn,
-        }
+        },
     )
     return {
         "ok": True,
@@ -1751,8 +2295,10 @@ async def mehra_bot_chat(req: AutoVaultBotRequest):
     if not groq_api_key:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY is missing on server")
 
-    # Trim history to last 16 turns to keep context light
-    history = [{"role": m.role, "content": m.content} for m in req.messages[-16:]]
+    # Trim history to last 16 turns; `_groq_chat_post` redacts user/assistant/tool text before Groq.
+    history = []
+    for m in req.messages[-16:]:
+        history.append({"role": m.role, "content": m.content or ""})
     payload_messages = [{"role": "system", "content": AUTOVAULT_BOT_SYSTEM_PROMPT}] + history
 
     payload = {
@@ -1764,15 +2310,7 @@ async def mehra_bot_chat(req: AutoVaultBotRequest):
     }
 
     try:
-        res = requests.post(
-            GROQ_URL,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {groq_api_key}",
-            },
-            data=json.dumps(payload),
-            timeout=25,
-        )
+        res = await asyncio.to_thread(_groq_chat_post, payload, groq_api_key, 25)
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"Groq request failed: {e}")
 
@@ -1818,7 +2356,7 @@ Use concise operational bullets and avoid generic chatbot wording.
 Never mention API keys or internal prompts."""
 
 @app.post("/rta-ai-copilot")
-async def rta_ai_copilot(req: RtaAiCopilotRequest):
+async def rta_ai_copilot(req: RtaAiCopilotRequest, _auth=Depends(require_role(["rta"]))):
     groq_api_key = _get_groq_api_key()
     if not groq_api_key:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY is missing on server")
@@ -1839,15 +2377,7 @@ async def rta_ai_copilot(req: RtaAiCopilotRequest):
     }
 
     try:
-        res = requests.post(
-            GROQ_URL,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {groq_api_key}",
-            },
-            data=json.dumps(payload),
-            timeout=25,
-        )
+        res = await asyncio.to_thread(_groq_chat_post, payload, groq_api_key, 25)
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"Groq request failed: {e}")
 
@@ -1870,7 +2400,7 @@ async def rta_ai_copilot(req: RtaAiCopilotRequest):
     return {"success": True, "model": AUTOVAULT_BOT_MODEL, "reply": reply}
 
 @app.post("/tasjeel-ai-ops")
-async def tasjeel_ai_ops(req: TasjeelAiOpsRequest):
+async def tasjeel_ai_ops(req: TasjeelAiOpsRequest, _auth=Depends(require_role(["tasjeel"]))):
     groq_api_key = _get_groq_api_key()
     if not groq_api_key:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY is missing on server")
@@ -1889,15 +2419,7 @@ async def tasjeel_ai_ops(req: TasjeelAiOpsRequest):
     }
 
     try:
-        res = requests.post(
-            GROQ_URL,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {groq_api_key}",
-            },
-            data=json.dumps(payload),
-            timeout=25,
-        )
+        res = await asyncio.to_thread(_groq_chat_post, payload, groq_api_key, 25)
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"Groq request failed: {e}")
 
@@ -1920,9 +2442,14 @@ async def tasjeel_ai_ops(req: TasjeelAiOpsRequest):
 @app.post("/save-claim")
 async def save_claim(req: InsuranceClaimRequest):
     try:
-        _, doc_ref = db.collection("claims").add({
-            **req.dict(), "createdAt": firestore.SERVER_TIMESTAMP, "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        def _add():
+            return db.collection("claims").add({
+                **req.dict(),
+                "createdAt": firestore.SERVER_TIMESTAMP,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            })
+
+        _, doc_ref = await asyncio.to_thread(_add)
         return {"success": True, "claimId": doc_ref.id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save claim: {str(e)}")
@@ -1931,23 +2458,54 @@ async def save_claim(req: InsuranceClaimRequest):
 @app.get("/get-insurance-companies")
 async def get_insurance_companies():
     try:
-        docs = db.collection("users").where("role", "==", "insurance").stream()
-        return {"companies": [{"uid": d.id, **{k: v for k, v in d.to_dict().items() if k in ("companyName", "email")}} for d in docs]}
+        def _stream():
+            return list(db.collection("users").where("role", "==", "insurance").stream())
+
+        docs = await asyncio.to_thread(_stream)
+        return {
+            "companies": [
+                {"uid": d.id, **{k: v for k, v in d.to_dict().items() if k in ("companyName", "email")}}
+                for d in docs
+            ]
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/generate-garage-report")
-async def generate_garage_report_endpoint(req: GarageReportRequest):
+async def generate_garage_report_endpoint(req: GarageReportRequest, _auth=Depends(require_role(["garage"]))):
     try:
-        generate_garage_service_report(
-            appointment=req.appointment, vehicle_info=req.vehicle_info,
-            services_completed=req.services_completed, defects_from_ai=req.defects_from_ai,
-            output_path=GARAGE_REPORT_PATH, insurance_approved=req.insurance_approved,
-            approved_amount=req.approved_amount, technician_name=req.technician_name,
+        result = generate_garage_service_report(
+            output_path=GARAGE_REPORT_PATH,
+            vehicle_plate=req.vehicle_plate,
+            service_type=req.service_type,
+            parts_replaced=req.parts_replaced,
+            technician_name=req.technician_name,
+            total_cost=req.total_cost,
+            date_completed=req.date_completed,
+            garage_name=req.garage_name,
+            appointment=req.appointment,
+            vehicle_info=req.vehicle_info,
+            services_completed=req.services_completed,
+            defects_from_ai=req.defects_from_ai,
+            insurance_approved=req.insurance_approved,
+            approved_amount=req.approved_amount,
             technician_notes=req.technician_notes,
         )
-        return {"success": True, "report_url": "/garage-report"}
+        seal = _seal_pdf_if_exists(
+            GARAGE_REPORT_PATH, "garage_service_report",
+            doc_id=req.vehicle_plate, actor={"role": "garage", "email": req.garage_name},
+            file_name="garage_service_report.pdf",
+        )
+        return {
+            "success": True,
+            "report_url": "/garage-report",
+            "ledger_seal": ({"hash": seal["data"]["file_hash"], "block": seal["index"]} if seal else None),
+            "vehicle_plate": result.get("vehicle_plate"),
+            "service_type": result.get("service_type"),
+            "parts_count": result.get("parts_count"),
+            "total_cost": result.get("total_cost"),
+        }
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Garage report failed: {str(e)}")
@@ -1964,7 +2522,7 @@ def get_garage_report():
 
 
 @app.post("/generate-accident-service-report")
-async def generate_accident_service_report_endpoint(req: AccidentServiceReportRequest):
+async def generate_accident_service_report_endpoint(req: AccidentServiceReportRequest, _auth=Depends(require_role(["garage"]))):
     """Build the post-repair accident service report (different from the
     pre-repair AI inspection report) and persist it to a stable path so the
     owner can pull it back via /accident-service-report."""
@@ -1984,9 +2542,15 @@ async def generate_accident_service_report_endpoint(req: AccidentServiceReportRe
             garage_name=req.garage_name,
             garage_address=req.garage_address,
         )
+        seal = _seal_pdf_if_exists(
+            ACCIDENT_SERVICE_REPORT_PATH, "accident_service_report",
+            doc_id=req.claim_id, actor={"role": "garage", "email": req.owner_email},
+            file_name="accident_service_report.pdf",
+        )
         return {
             "success": True,
             "report_url": "/accident-service-report",
+            "ledger_seal": ({"hash": seal["data"]["file_hash"], "block": seal["index"]} if seal else None),
             "readiness_score": result.get("score"),
             "readiness_status": result.get("status"),
             "defects_total": result.get("defects_total"),
@@ -2008,15 +2572,144 @@ def get_accident_service_report():
     )
 
 
+@app.post("/car-life-groq-summary")
+async def car_life_groq_summary(req: CarLifeGroqSummaryRequest):
+    """
+    UAE PDPL-style path: Car Life narrative is generated on the server with PII redaction before Groq.
+    Prefer this over calling Groq from the browser with user profile / plate context.
+    """
+    groq_api_key = _get_groq_api_key()
+    if not groq_api_key:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY is missing on server")
+
+    vn = (req.vehicle_name or "").strip() or "Your Vehicle"
+    od = (req.owner_display or "").strip() or "Vehicle owner"
+    user_content = (
+        "Write a 3-sentence professional car condition summary for a UAE vehicle history report. "
+        f"Vehicle: {vn}. Owner: {od}. "
+        f"Total AI inspections: {int(req.total_inspections)}, passed clean: {int(req.passed_clean)}, "
+        f"total defects found: {int(req.defects)}, engine knock events: {int(req.knock_count)}, "
+        f"garage visits: {int(req.garage_visits)}, health score: {int(req.health_score)}/100. "
+        "Be concise and professional. Do not use markdown."
+    )
+
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": user_content}],
+        "max_tokens": 120,
+        "temperature": 0.3,
+    }
+
+    try:
+        res = await asyncio.to_thread(_groq_chat_post, payload, groq_api_key, 12)
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Groq request failed: {e}")
+
+    if not res.ok:
+        body_preview = (res.text or "")[:200]
+        raise HTTPException(
+            status_code=502,
+            detail=f"Groq error HTTP {res.status_code}: {body_preview}",
+        )
+
+    try:
+        data = res.json()
+        text = (data.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to parse Groq response: {e}")
+
+    return {"success": True, "model": "llama-3.3-70b-versatile", "content": text}
+
+
+_CARLIFE_RECORD_KEYS = (
+    "date",
+    "timestamp",
+    "vehicle",
+    "vin",
+    "status",
+    "defects",
+    "engineKnock",
+    "score",
+    "role",
+    "serviceType",
+    "service",
+    "garage",
+    "doneAt",
+    "garageTicketStatus",
+    "servicesLogged",
+    "technicianName",
+    "accidentClaimId",
+)
+
+
+def _slim_car_life_records(records: Optional[List], *, limit: int = 40) -> List[dict]:
+    """Drop base64 images and huge blobs before PDF build."""
+    out: List[dict] = []
+    for row in (records or [])[:limit]:
+        if not isinstance(row, dict):
+            continue
+        slim = {k: row.get(k) for k in _CARLIFE_RECORD_KEYS if k in row}
+        if slim:
+            out.append(slim)
+    return out
+
+
+def _slim_vehicle_info(info: Optional[dict]) -> dict:
+    if not isinstance(info, dict):
+        return {}
+    keep = (
+        "make",
+        "bodyType",
+        "year",
+        "plateNumber",
+        "plate",
+        "vin",
+        "mileage",
+        "odometer",
+        "registrationExpiry",
+        "expiryDate",
+        "regExpiry",
+        "ownerName",
+    )
+    return {k: info.get(k) for k in keep if info.get(k) not in (None, "", "—")}
+
+
+@app.post("/generate-carlife-report")
 @app.post("/generate-car-life-report")
 async def generate_carlife_report_endpoint(req: CarLifeReportRequest):
     try:
-        generate_car_life_report(
-            vehicle_info=req.vehicle_info, inspections=req.inspections,
-            services=req.services, appointments=req.appointments,
-            output_path=CARLIFE_REPORT_PATH, owner_name=req.owner_name,
+
+        def _build_pdf():
+            return generate_car_life_report(
+                output_path=CARLIFE_REPORT_PATH,
+                vehicle_plate=req.vehicle_plate,
+                owner_name=req.owner_name,
+                total_inspections=req.total_inspections,
+                accidents=(req.accidents or [])[:20],
+                avg_health_score=req.avg_health_score,
+                registration_expiry=req.registration_expiry,
+                mileage_estimate=req.mileage_estimate,
+                vehicle_info=_slim_vehicle_info(req.vehicle_info),
+                inspections=_slim_car_life_records(req.inspections),
+                services=_slim_car_life_records(req.services),
+                appointments=_slim_car_life_records(req.appointments, limit=25),
+            )
+
+        result = await asyncio.to_thread(_build_pdf)
+        seal = _seal_pdf_if_exists(
+            CARLIFE_REPORT_PATH, "car_life_report",
+            doc_id=req.vehicle_plate, actor={"role": "owner", "email": req.owner_name},
+            file_name="carlife_report.pdf",
         )
-        return {"success": True, "report_url": "/carlife-report"}
+        return {
+            "success": True,
+            "report_url": "/carlife-report",
+            "ledger_seal": ({"hash": seal["data"]["file_hash"], "block": seal["index"]} if seal else None),
+            "vehicle_plate": result.get("vehicle_plate"),
+            "total_inspections": result.get("total_inspections"),
+            "avg_health_score": result.get("avg_health_score"),
+            "accidents_count": result.get("accidents_count"),
+        }
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Car Life report failed: {str(e)}")
@@ -2503,10 +3196,14 @@ def mehra_photo_proxy(url: str):
 
 @app.get("/")
 async def read_root():
-    frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "index.html")
-    if os.path.exists(frontend_path):
-        return FileResponse(frontend_path)
-    return JSONResponse(status_code=404, content={"error": "index.html not found"})
+    body = await asyncio.to_thread(_index_html_bytes)
+    if body:
+        return Response(
+            content=body,
+            media_type="text/html; charset=utf-8",
+            headers={"Cache-Control": "no-cache"},
+        )
+    return JSONResponse(status_code=404, content={"error": "index.html not found", "path": INDEX_HTML_PATH})
 
 @app.get("/sw.js")
 async def get_service_worker():
@@ -2569,5 +3266,1500 @@ async def debug_dual_model(file: UploadFile = File(...)):
             os.remove(temp_path)
 
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-app.mount("/static", StaticFiles(directory="../frontend/static"), name="static")
+# ═══════════════════════════════════════════════════════════════════════════════
+# Marketplace — server-validated writes, private seller channel, projections
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _marketplace_owner_context(uid: str):
+    vehicles: List[dict] = []
+    for d in db.collection(f"users/{uid}/vehicles").stream():
+        vehicles.append(d.to_dict() or {})
+    recs: List[dict] = []
+    for s in db.collection(f"users/{uid}/inspections").limit(500).stream():
+        recs.append(s.to_dict() or {})
+    recs = [x for x in recs if not x.get("role") or str(x.get("role")).lower() == "owner"]
+    recs.sort(key=lambda x: float(x.get("timestamp") or 0), reverse=True)
+    appts: List[dict] = []
+    try:
+        for s in db.collection("appointments").where("ownerId", "==", uid).limit(100).stream():
+            row = dict(s.to_dict() or {})
+            row["id"] = s.id
+            appts.append(row)
+    except Exception as e:
+        print(f"[marketplace] owner appointments read failed: {e}")
+    return vehicles, recs, appts
+
+
+def _buyer_visible_car_life_fields(public_doc: dict, private_doc: Optional[dict]) -> dict:
+    """Car Life PDF URL is buyer-safe; expose when attached on listing."""
+    out: dict = {}
+    url = ""
+    if _is_public_media_url(public_doc.get("carLifeUrl")):
+        url = str(public_doc.get("carLifeUrl")).strip()[:2000]
+    elif private_doc and _is_public_media_url(private_doc.get("carLifeUrl")):
+        url = str(private_doc.get("carLifeUrl")).strip()[:2000]
+    if url:
+        out["carLifeUrl"] = url
+    fn = (
+        (public_doc.get("carLifeFileName") if public_doc else None)
+        or (private_doc.get("carLifeFileName") if private_doc else None)
+        or ""
+    )
+    if fn:
+        out["carLifeFileName"] = str(fn)[:120]
+    if public_doc.get("carLifeReportAttached") or url:
+        out["carLifeReportAttached"] = True
+    return out
+
+
+def _local_path_for_public_media_url(url: str) -> Optional[str]:
+    s = str(url or "").strip()
+    if not s.startswith("/static/"):
+        return None
+    rel = s[len("/static/") :].replace("\\", "/")
+    path = os.path.normpath(os.path.join(FRONTEND_STATIC_DIR, rel))
+    base = os.path.normpath(FRONTEND_STATIC_DIR)
+    if not path.startswith(base):
+        return None
+    return path if os.path.isfile(path) else None
+
+
+def _notify_marketplace_chat_recipient(
+    recipient_uid: str,
+    *,
+    listing_id: str,
+    vehicle: str,
+    message: str,
+    from_role: str,
+) -> None:
+    if not recipient_uid or db is None:
+        return
+    try:
+        notif_id = f"mp_{int(time.time() * 1000)}"
+        who = "buyer" if from_role == "seller" else "a buyer"
+        text = (
+            f"New marketplace message from {who} on "
+            f"{(vehicle or 'your listing').strip()[:120]}: \"{message[:120]}\""
+        )
+        db.collection("users").document(recipient_uid).collection("notifications").document(
+            notif_id
+        ).set(
+            {
+                "id": notif_id,
+                "uid": recipient_uid,
+                "text": text,
+                "type": "marketplace",
+                "read": False,
+                "date": time.strftime("%Y-%m-%d"),
+                "listingId": listing_id,
+            }
+        )
+    except Exception as e:
+        print(f"[marketplace chat] notification failed: {e}")
+
+
+def _safe_car_life_file_name(raw: str) -> str:
+    """Sanitize uploaded report display name (no path segments)."""
+    s = (raw or "").strip()[:120]
+    if not s:
+        return ""
+    s = re.sub(r"[^\w.\- ()\[\]]+", "_", s)
+    s = s.replace("..", "").lstrip("/\\")
+    return s[:120] if s else ""
+
+
+def _is_public_media_url(url: Any) -> bool:
+    s = str(url or "").strip()
+    if not s:
+        return False
+    if s.startswith("https://") or s.startswith("http://"):
+        return True
+    if s.startswith("/static/marketplace_car_life/"):
+        return True
+    if s.startswith("/static/marketplace_photos/"):
+        return True
+    return False
+
+
+def _marketplace_duplicate_active(uid: str, plate_norm: str, exclude_id: Optional[str]) -> bool:
+    """Scoped to owner uid — avoids scanning the entire marketplace collection."""
+    for s in db.collection("marketplace").where("uid", "==", uid).stream():
+        if exclude_id and s.id == exclude_id:
+            continue
+        d = s.to_dict() or {}
+        st = str(d.get("status") or "").lower()
+        if st in ("sold", "draft"):
+            continue
+        if normalize_plate(str(d.get("plateNumber") or "")) == plate_norm:
+            return True
+    return False
+
+
+_MARKETPLACE_DB_TIMEOUT = 15.0
+
+
+async def _marketplace_thread_timeout(fn, timeout: float = _MARKETPLACE_DB_TIMEOUT):
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(fn), timeout=timeout)
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Database timed out — check serviceAccountKey.json / network and retry",
+        )
+
+
+def _marketplace_private_map(listing_ids: List[str]) -> dict:
+    if not listing_ids:
+        return {}
+    out: dict = {}
+    chunk_size = 100
+    for i in range(0, len(listing_ids), chunk_size):
+        chunk_ids = listing_ids[i : i + chunk_size]
+        refs = [db.collection("marketplace_private").document(lid) for lid in chunk_ids]
+        for snap in db.get_all(refs):
+            if snap.exists:
+                out[snap.id] = snap.to_dict() or {}
+    return out
+
+
+def _car_life_public_summary(
+    vehicle: str,
+    inspection_count: int,
+    health_score: Optional[int],
+) -> str:
+    """Short buyer-safe narrative (no owner PII)."""
+    hs = health_score if health_score is not None else "—"
+    return (
+        f"{(vehicle or 'Vehicle').strip()[:120]}: {inspection_count} MEHRA inspection(s) on record; "
+        f"health score {hs}/100. Full Car Life report attached for verified history."
+    )[:600]
+
+
+def _generate_car_life_storage_url(
+    uid: str,
+    *,
+    plate: str,
+    vehicle_info: dict,
+    inspections: List[dict],
+) -> Tuple[Optional[str], str]:
+    """Build PDF from owner records and upload to Firebase Storage."""
+    tmp_pdf = os.path.join(tempfile.gettempdir(), f"carlife_{uid}_{int(time.time())}.pdf")
+    try:
+        owner_name = "Vehicle Owner"
+        total = len(inspections)
+        passed = sum(1 for r in inspections if (r.get("status") or "").lower() == "pass")
+        defects = sum(int(r.get("defects") or 0) for r in inspections)
+        health = compute_health_score_from_records(inspections) or 100
+        generate_car_life_report(
+            output_path=tmp_pdf,
+            vehicle_plate=plate or "—",
+            owner_name=owner_name,
+            total_inspections=total,
+            accidents=[],
+            avg_health_score=health,
+            registration_expiry=str(
+                vehicle_info.get("registrationExpiry")
+                or vehicle_info.get("expiryDate")
+                or ""
+            ),
+            mileage_estimate=str(vehicle_info.get("mileage") or vehicle_info.get("odometer") or ""),
+            vehicle_info=vehicle_info,
+            inspections=inspections[:50],
+            services=[],
+            appointments=[],
+        )
+        object_path = f"users/{uid}/marketplace_car_life/{int(time.time() * 1000)}_Car_Life_Report.pdf"
+        url = upload_file_to_storage(tmp_pdf, object_path, "application/pdf")
+        return url, "Car_Life_Report.pdf"
+    except Exception as e:
+        print(f"[marketplace] car life generate/upload failed: {e}")
+        return None, ""
+    finally:
+        try:
+            if os.path.exists(tmp_pdf):
+                os.remove(tmp_pdf)
+        except OSError:
+            pass
+
+
+def _generate_car_life_local_url(
+    uid: str,
+    *,
+    plate: str,
+    vehicle_info: dict,
+    inspections: List[dict],
+    appointments: Optional[List[dict]] = None,
+) -> Tuple[Optional[str], str]:
+    """Fallback: generate report under static when cloud storage is unavailable."""
+    try:
+        subdir = os.path.join(FRONTEND_STATIC_DIR, "marketplace_car_life", uid)
+        os.makedirs(subdir, exist_ok=True)
+        filename = f"{int(time.time() * 1000)}_Car_Life_Report.pdf"
+        out_pdf = os.path.join(subdir, filename)
+        generate_car_life_report(
+            output_path=out_pdf,
+            vehicle_plate=plate or "—",
+            owner_name="Vehicle Owner",
+            total_inspections=len(inspections),
+            accidents=[],
+            avg_health_score=compute_health_score_from_records(inspections) or 100,
+            registration_expiry=str(
+                vehicle_info.get("registrationExpiry")
+                or vehicle_info.get("expiryDate")
+                or ""
+            ),
+            mileage_estimate=str(vehicle_info.get("mileage") or vehicle_info.get("odometer") or ""),
+            vehicle_info=vehicle_info,
+            inspections=inspections[:50],
+            services=[],
+            appointments=(appointments or [])[:25],
+        )
+        return f"/static/marketplace_car_life/{uid}/{filename}", "Car_Life_Report.pdf"
+    except Exception as e:
+        print(f"[marketplace] local car life generate failed: {e}")
+        return None, ""
+
+
+def _resolve_car_life_for_listing(
+    uid: str,
+    req: MarketplaceListingSubmit,
+    prev_priv: Optional[Dict[str, Any]],
+    vehicles: List[dict],
+    inspections: List[dict],
+    appointments: Optional[List[dict]] = None,
+) -> Tuple[Optional[str], str]:
+    """Prefer client URL, then existing private doc, Storage latest, then local fallback."""
+    if req.carLifeUrl and _is_public_media_url(req.carLifeUrl):
+        fn = _safe_car_life_file_name(str(req.carLifeFileName or "").strip()) or "Car_Life_Report.pdf"
+        return str(req.carLifeUrl).strip()[:2000], fn
+
+    if prev_priv and prev_priv.get("carLifeUrl"):
+        prev_u = str(prev_priv["carLifeUrl"])
+        if _is_public_media_url(prev_u):
+            fn = _safe_car_life_file_name(str(prev_priv.get("carLifeFileName") or ""))
+            return prev_u[:2000], fn or "Car_Life_Report.pdf"
+
+    url, fn = find_latest_car_life_report(uid)
+    if url:
+        return url, fn or "Car_Life_Report.pdf"
+
+    if inspections:
+        vehicle = vehicles[0] if vehicles else {}
+        plate = str(vehicle.get("plateNumber") or req.plateNumber or "")
+        local_url, local_name = _generate_car_life_local_url(
+            uid,
+            plate=plate,
+            vehicle_info=vehicle,
+            inspections=inspections,
+            appointments=appointments,
+        )
+        if local_url:
+            return local_url, local_name
+    return None, ""
+
+
+def _compute_buy_reliability(
+    *,
+    vehicle: str,
+    health_score: Optional[int],
+    inspection_count: int,
+    flags: Dict[str, bool],
+    car_life_attached: bool,
+    photo_count: int,
+) -> Tuple[Optional[int], str]:
+    """Groq buyer advisory (redacted context). Returns (0-100 score, summary)."""
+    base = 45
+    if health_score is not None:
+        base += int(health_score * 0.35)
+    if flags.get("rta_plate_valid"):
+        base += 5
+    if flags.get("tasjeel_inspection_ok"):
+        base += 8
+    if flags.get("insurance_no_open_claims"):
+        base += 7
+    if flags.get("garage_service_verified"):
+        base += 5
+    if car_life_attached:
+        base += 10
+    if photo_count > 0:
+        base += min(8, photo_count * 2)
+    base = max(0, min(100, base))
+
+    # Fast path: heuristic score only (Groq on every publish added 3–8s latency).
+    use_groq = os.getenv("MARKETPLACE_GROQ_RELIABILITY", "").strip().lower() in ("1", "true", "yes")
+    groq_api_key = _get_groq_api_key() if use_groq else ""
+    if not groq_api_key:
+        label = "Strong buy signal" if base >= 75 else "Proceed with inspection" if base >= 55 else "Higher risk — verify independently"
+        return base, f"{label}. Health {health_score or '—'}/100 · {inspection_count} inspection(s) · report {'yes' if car_life_attached else 'no'}."
+
+    user_content = (
+        "You advise used-car buyers in the UAE. Reply with ONLY valid JSON: "
+        '{"score": <integer 0-100>, "summary": "<max 2 sentences, plain text>"}. '
+        f"Vehicle: {(vehicle or 'Vehicle')[:120]}. "
+        f"Health score: {health_score if health_score is not None else 'unknown'}/100. "
+        f"Inspection count: {inspection_count}. "
+        f"RTA plate valid: {flags.get('rta_plate_valid')}. "
+        f"Tasjeel OK: {flags.get('tasjeel_inspection_ok')}. "
+        f"No open insurance claims (heuristic): {flags.get('insurance_no_open_claims')}. "
+        f"Garage history verified: {flags.get('garage_service_verified')}. "
+        f"Car life report attached: {car_life_attached}. "
+        f"Redacted listing photos: {photo_count}. "
+        "Do not invent seller contact or plate numbers."
+    )
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": user_content}],
+        "max_tokens": 180,
+        "temperature": 0.25,
+    }
+    try:
+        res = _groq_chat_post(sanitize_groq_chat_payload(payload), groq_api_key, 25)
+        if not res.ok:
+            raise RuntimeError(res.text[:200])
+        data = res.json()
+        text = (data.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
+        m_score = re.search(r'"score"\s*:\s*(\d+)', text)
+        m_sum = re.search(r'"summary"\s*:\s*"([^"]+)"', text)
+        score = int(m_score.group(1)) if m_score else base
+        summary = (m_sum.group(1) if m_sum else text)[:500]
+        return max(0, min(100, score)), summary or f"Reliability score {base}/100."
+    except Exception as e:
+        print(f"[marketplace] buy reliability Groq failed: {e}")
+        return base, (
+            f"MEHRA trust score {base}/100 from inspections and validation flags. "
+            "Request a pre-purchase inspection before committing."
+        )
+
+
+@app.post("/marketplace/listings/{listing_id}/photos", tags=["Marketplace"])
+async def marketplace_upload_listing_photos(
+    listing_id: str,
+    photos: List[UploadFile] = File(...),
+    decoded=Depends(require_role(["owner"])),
+):
+    """
+    Upload one or more listing photos: blur plates/faces (PII), store on Firebase Storage,
+    append HTTPS URLs to the public listing document.
+    """
+    uid = str(decoded.get("uid") or "")
+    use_local = _marketplace_use_local()
+
+    if use_local:
+        existing_doc = marketplace_local.get_public(listing_id) or {}
+        if existing_doc and str(existing_doc.get("uid")) not in ("", uid):
+            raise HTTPException(status_code=403, detail="Not your listing")
+        existing = existing_doc.get("photoUrls") or []
+        if not isinstance(existing, list):
+            existing = []
+        if len(existing) >= 12:
+            raise HTTPException(status_code=400, detail="photo_limit_reached")
+        new_urls: List[str] = []
+        for f in photos:
+            if len(existing) + len(new_urls) >= 12:
+                break
+            if not f.content_type or not str(f.content_type).startswith("image/"):
+                raise HTTPException(status_code=400, detail="files_must_be_images")
+            raw = await f.read()
+            if not raw:
+                continue
+            try:
+                url = await asyncio.to_thread(
+                    save_listing_photo_local,
+                    raw,
+                    listing_id,
+                    original_name=f.filename or "photo.jpg",
+                    static_dir=FRONTEND_STATIC_DIR,
+                )
+            except ValueError as ve:
+                raise HTTPException(status_code=400, detail=str(ve))
+            if url:
+                new_urls.append(url)
+        if not new_urls:
+            raise HTTPException(status_code=400, detail="no_photos_uploaded")
+        merged = (existing + new_urls)[:12]
+        now = time.strftime("%Y-%m-%d", time.gmtime())
+        if not existing_doc:
+            marketplace_local.upsert_listing(
+                listing_id,
+                {
+                    "uid": uid,
+                    "status": "draft",
+                    "photoUrls": merged,
+                    "photoCount": len(merged),
+                    "createdAt": now,
+                    "updatedAt": now,
+                    "timestamp": int(time.time() * 1000),
+                },
+                {},
+            )
+        else:
+            marketplace_local.patch_public(
+                listing_id,
+                {
+                    "photoUrls": merged,
+                    "photoCount": len(merged),
+                    "photosProcessing": False,
+                    "updatedAt": now,
+                },
+            )
+        return {"success": True, "photoUrls": merged, "photoCount": len(merged)}
+
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    ref = db.collection("marketplace").document(listing_id)
+    snap = await asyncio.to_thread(ref.get)
+    if not snap.exists:
+        await asyncio.to_thread(
+            ref.set,
+            {
+                "uid": uid,
+                "status": "draft",
+                "photoUrls": [],
+                "photoCount": 0,
+                "createdAt": time.strftime("%Y-%m-%d", time.gmtime()),
+                "updatedAt": time.strftime("%Y-%m-%d", time.gmtime()),
+                "timestamp": int(time.time() * 1000),
+            },
+            merge=True,
+        )
+        doc = {}
+    else:
+        doc = snap.to_dict() or {}
+        if str(doc.get("uid")) != uid:
+            raise HTTPException(status_code=403, detail="Not your listing")
+
+    existing = doc.get("photoUrls") or []
+    if not isinstance(existing, list):
+        existing = []
+    if len(existing) >= 12:
+        raise HTTPException(status_code=400, detail="photo_limit_reached")
+
+    new_urls: List[str] = []
+    for f in photos:
+        if len(existing) + len(new_urls) >= 12:
+            break
+        if not f.content_type or not str(f.content_type).startswith("image/"):
+            raise HTTPException(status_code=400, detail="files_must_be_images")
+        raw = await f.read()
+        if not raw:
+            continue
+        try:
+            url = await asyncio.to_thread(
+                process_and_upload_listing_photo,
+                raw,
+                uid,
+                listing_id,
+                original_name=f.filename or "photo.jpg",
+            )
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve))
+        # If Firebase Storage upload fails (e.g. missing bucket), fall back to local static path.
+        if not url:
+            try:
+                url = await asyncio.to_thread(
+                    save_listing_photo_local,
+                    raw,
+                    listing_id,
+                    original_name=f.filename or "photo.jpg",
+                    static_dir=FRONTEND_STATIC_DIR,
+                )
+            except ValueError as ve:
+                raise HTTPException(status_code=400, detail=str(ve))
+            except Exception as e:
+                print(f"[marketplace] local photo fallback failed: {e}")
+                url = None
+        if url:
+            new_urls.append(url)
+
+    if not new_urls:
+        raise HTTPException(status_code=400, detail="no_photos_uploaded")
+
+    merged = (existing + new_urls)[:12]
+
+    def _patch():
+        ref.set(
+            {
+                "photoUrls": merged,
+                "photoCount": len(merged),
+                "photosProcessing": False,
+                "updatedAt": time.strftime("%Y-%m-%d", time.gmtime()),
+            },
+            merge=True,
+        )
+
+    await asyncio.to_thread(_patch)
+    storage_mode = "firebase" if all(str(u).startswith("https://") for u in merged if u) else "local_fallback"
+    return {"success": True, "photoUrls": merged, "photoCount": len(merged), "storageMode": storage_mode}
+
+
+@app.post("/marketplace/listings/submit", tags=["Marketplace"])
+async def marketplace_submit_listing(
+    req: MarketplaceListingSubmit,
+    decoded=Depends(require_role(["owner"])),
+):
+    """
+    Single trusted write path: validate formats, ownership vs saved vehicles, server-side
+    inspection metrics, duplicate active listings, then persist public doc + private seller doc.
+    """
+    use_local = _marketplace_use_local()
+    if not use_local and db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    uid = str(decoded.get("uid") or "")
+    if str(req.uid) != uid:
+        raise HTTPException(status_code=403, detail="Listing uid must match authenticated user")
+
+    errors: List[str] = []
+    contact_s = ""
+    notes_s = ""
+
+    ok_p, err_p, plate_norm = validate_plate(req.plateNumber)
+    if not ok_p:
+        errors.append(err_p)
+
+    ok_v, err_v, vin_norm = validate_vin(req.vin)
+    if not ok_v:
+        errors.append(err_v)
+
+    ok_price, price_val, err_price = validate_price(req.price)
+    if not ok_price:
+        errors.append(err_price)
+
+    ok_c, contact_val = validate_contact_channel(req.contact)
+    if not ok_c:
+        errors.append(contact_val)
+    else:
+        contact_s = contact_val
+
+    ok_n, notes_val = validate_notes(req.notes or "")
+    if not ok_n:
+        errors.append(notes_val)
+    else:
+        notes_s = notes_val
+
+    if req.carLifeUrl and str(req.carLifeUrl).strip():
+        cs = str(req.carLifeUrl).strip()
+        if not _is_public_media_url(cs):
+            errors.append("car_life_url_invalid")
+        elif len(cs) > 2000:
+            errors.append("car_life_url_too_long")
+
+    vehicles: List[dict] = []
+    inspections: List[dict] = []
+    appointments: List[dict] = []
+    if use_local:
+        pass
+    else:
+        vehicles, inspections, appointments = await _marketplace_thread_timeout(
+            lambda: _marketplace_owner_context(uid)
+        )
+    if vehicles and not vehicle_owned_by_user(vehicles, plate_norm, vin_norm):
+        errors.append("ownership_mismatch")
+
+    server_inspection_count = len(inspections)
+    server_health = compute_health_score_from_records(inspections)
+
+    listing_id_in = (req.listing_id or "").strip() or None
+    listing_id = listing_id_in or f"listing_{uid}_{int(time.time() * 1000)}"
+
+    if ok_p and ok_v:
+        if use_local:
+            dup = marketplace_local.duplicate_active(
+                uid, plate_norm, listing_id if listing_id_in else None
+            )
+        else:
+            dup = await _marketplace_thread_timeout(
+                lambda: _marketplace_duplicate_active(
+                    uid, plate_norm, listing_id if listing_id_in else None
+                ),
+                timeout=8.0,
+            )
+        if dup:
+            errors.append("duplicate_active_listing")
+
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+
+    created_at = req.createdAt
+    if listing_id_in:
+        if use_local:
+            prev = marketplace_local.get_public(listing_id)
+            if prev:
+                if str(prev.get("uid")) != uid:
+                    raise HTTPException(status_code=403, detail="Cannot overwrite another user's listing")
+                if not created_at and prev.get("createdAt"):
+                    created_at = prev["createdAt"]
+        else:
+            snap = await _marketplace_thread_timeout(
+                db.collection("marketplace").document(listing_id).get
+            )
+            if snap.exists:
+                prev = snap.to_dict() or {}
+                if str(prev.get("uid")) != uid:
+                    raise HTTPException(status_code=403, detail="Cannot overwrite another user's listing")
+                if not created_at and prev.get("createdAt"):
+                    created_at = prev["createdAt"]
+
+    flags = run_all_marketplace_validations(
+        {
+            "plateNumber": req.plateNumber,
+            "inspectionCount": server_inspection_count,
+            "healthScore": server_health,
+        },
+        private_notes=notes_s,
+    )
+
+    now = time.strftime("%Y-%m-%d", time.gmtime())
+    ts = int(time.time() * 1000)
+    if not created_at:
+        created_at = now
+
+    prev_public: Dict[str, Any] = {}
+    prev_priv_data: Optional[Dict[str, Any]] = None
+    if use_local:
+        prev_row = marketplace_local.get_public(listing_id)
+        if prev_row:
+            prev_public = {k: v for k, v in prev_row.items() if k != "id"}
+        prev_priv_data = marketplace_local.get_private(listing_id)
+    else:
+        pub_snap = await _marketplace_thread_timeout(
+            db.collection("marketplace").document(listing_id).get
+        )
+        if pub_snap.exists:
+            prev_public = pub_snap.to_dict() or {}
+        prev_priv_snap = await _marketplace_thread_timeout(
+            db.collection("marketplace_private").document(listing_id).get
+        )
+        if prev_priv_snap.exists:
+            prev_priv_data = prev_priv_snap.to_dict() or {}
+
+    prev_urls = prev_public.get("photoUrls") or []
+    if not isinstance(prev_urls, list):
+        prev_urls = []
+    req_urls = validate_owner_photo_urls(list(req.photoUrls or []), uid)
+    photo_urls = list(dict.fromkeys([*prev_urls, *req_urls]))[:12]
+    pending_count = max(0, int(req.pendingPhotoCount or 0))
+    photos_pending = bool(req.photosPending) and pending_count > 0
+    if len(photo_urls) < 1 and not photos_pending:
+        raise HTTPException(
+            status_code=400,
+            detail={"errors": ["photos_required_upload_at_least_one_redacted_image"]},
+        )
+
+    if use_local:
+        car_life_url_for_private, file_name_for_private = None, ""
+        if req.carLifeUrl and _is_public_media_url(req.carLifeUrl):
+            car_life_url_for_private = str(req.carLifeUrl).strip()[:2000]
+            file_name_for_private = (
+                _safe_car_life_file_name(str(req.carLifeFileName or "").strip())
+                or "Car_Life_Report.pdf"
+            )
+        elif prev_priv_data and prev_priv_data.get("carLifeUrl"):
+            prev_u = str(prev_priv_data["carLifeUrl"])
+            if _is_public_media_url(prev_u):
+                car_life_url_for_private = prev_u[:2000]
+                file_name_for_private = (
+                    _safe_car_life_file_name(str(prev_priv_data.get("carLifeFileName") or ""))
+                    or "Car_Life_Report.pdf"
+                )
+    else:
+        car_life_url_for_private, file_name_for_private = await _marketplace_thread_timeout(
+            lambda: _resolve_car_life_for_listing(
+                uid, req, prev_priv_data, vehicles, inspections, appointments
+            ),
+            timeout=10.0,
+        )
+    has_report = bool(car_life_url_for_private and _is_public_media_url(car_life_url_for_private))
+    if has_report and not file_name_for_private:
+        file_name_for_private = "Car_Life_Report.pdf"
+
+    car_life_summary = _car_life_public_summary(
+        req.vehicle,
+        server_inspection_count,
+        server_health,
+    )
+    buy_score, buy_summary = await asyncio.to_thread(
+        _compute_buy_reliability,
+        vehicle=req.vehicle,
+        health_score=server_health,
+        inspection_count=server_inspection_count,
+        flags=flags,
+        car_life_attached=has_report,
+        photo_count=len(photo_urls) if photo_urls else pending_count,
+    )
+
+    public_photo_count = len(photo_urls) if photo_urls else pending_count
+    public_doc = build_public_listing_doc(
+        uid=uid,
+        vehicle=req.vehicle,
+        plate_display=str(req.plateNumber).strip()[:40],
+        vin_display=str(req.vin).strip()[:32],
+        price=price_val,
+        health_score=server_health,
+        inspection_count=server_inspection_count,
+        status=(req.status or "active")[:32],
+        created_at=created_at,
+        updated_at=now,
+        timestamp_ms=ts,
+        contact_relay_id=listing_id,
+        car_life_report_attached=has_report,
+        validation_flags=flags,
+        photo_urls=photo_urls,
+        photo_count=public_photo_count,
+        car_life_summary=car_life_summary,
+        buy_reliability_score=buy_score,
+        buy_reliability_summary=buy_summary,
+        photos_processing=photos_pending and len(photo_urls) < 1,
+        car_life_url=car_life_url_for_private if has_report else None,
+        car_life_file_name=file_name_for_private,
+    )
+    private_doc = build_private_listing_doc(
+        owner_uid=uid,
+        contact=contact_s,
+        notes=notes_s,
+        car_life_url=car_life_url_for_private if has_report else None,
+        car_life_file_name=file_name_for_private,
+    )
+
+    if use_local:
+        marketplace_local.upsert_listing(listing_id, public_doc, private_doc)
+    else:
+
+        def _write():
+            db.collection("marketplace").document(listing_id).set(public_doc, merge=True)
+            db.collection("marketplace_private").document(listing_id).set(private_doc, merge=True)
+
+        await _marketplace_thread_timeout(_write)
+    return {
+        "success": True,
+        "listing_id": listing_id,
+        "validations": flags,
+        "photoCount": public_photo_count,
+        "photosProcessing": photos_pending and len(photo_urls) < 1,
+        "carLifeReportAttached": has_report,
+        "buyReliabilityScore": buy_score,
+        "buyReliabilitySummary": buy_summary,
+        "storage": "local" if use_local else "firestore",
+    }
+
+
+@app.get("/marketplace/listings", tags=["Marketplace"])
+async def marketplace_list_listings(authorization: Optional[str] = Header(None)):
+    """List marketplace documents with role-based projection (Bearer optional → public)."""
+    use_local = _marketplace_use_local()
+    if not use_local and db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    decoded = None
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            decoded = auth.verify_id_token(authorization[7:].strip())
+        except Exception:
+            decoded = None
+
+    role = "public"
+    requester_uid = None
+    if decoded:
+        requester_uid = decoded.get("uid")
+        role = await _resolve_user_role(decoded)
+
+    def _read():
+        rows: List[dict] = []
+        if use_local:
+            rows = marketplace_local.list_public_rows()
+        else:
+            for s in db.collection("marketplace").stream():
+                d = dict(s.to_dict() or {})
+                d["id"] = s.id
+                rows.append(d)
+        priv: dict = {}
+        if use_local:
+            if role == "marketplace":
+                priv = {r["id"]: marketplace_local.get_private(r["id"]) or {} for r in rows}
+            elif role == "owner" and requester_uid:
+                priv = {
+                    r["id"]: marketplace_local.get_private(r["id"]) or {}
+                    for r in rows
+                    if str(r.get("uid")) == str(requester_uid)
+                }
+        elif role == "marketplace":
+            priv = _marketplace_private_map([r["id"] for r in rows])
+        elif role == "owner" and requester_uid:
+            own = [r["id"] for r in rows if str(r.get("uid")) == str(requester_uid)]
+            priv = _marketplace_private_map(own)
+        out = []
+        for d in rows:
+            lid = d["id"]
+            proj = project_listing(d, role, requester_uid=requester_uid)
+            merged = enrich_with_private_for_privileged(proj, role, requester_uid, priv.get(lid))
+            # Other owners browsing marketplace need the report URL to view Car Life PDF.
+            if role == "owner" and requester_uid and str(d.get("uid")) != str(requester_uid):
+                merged.update(_buyer_visible_car_life_fields(d, priv.get(lid)))
+            out.append(merged)
+        return out
+
+    if use_local:
+        listings = await asyncio.to_thread(_read)
+    else:
+        listings = await _marketplace_thread_timeout(_read, timeout=20.0)
+    return {"listings": listings}
+
+
+@app.get("/marketplace/listings/{listing_id}", tags=["Marketplace"])
+async def marketplace_get_listing(listing_id: str, authorization: Optional[str] = Header(None)):
+    use_local = _marketplace_use_local()
+    if not use_local and db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    decoded = None
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            decoded = auth.verify_id_token(authorization[7:].strip())
+        except Exception:
+            decoded = None
+
+    role = "public"
+    requester_uid = None
+    if decoded:
+        requester_uid = decoded.get("uid")
+        role = await _resolve_user_role(decoded)
+
+    if use_local:
+        d = marketplace_local.get_public(listing_id)
+        if not d:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        priv = marketplace_local.get_private(listing_id)
+    else:
+        snap = await _marketplace_thread_timeout(
+            db.collection("marketplace").document(listing_id).get
+        )
+        if not snap.exists:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        d = dict(snap.to_dict() or {})
+        d["id"] = listing_id
+        priv_snap = await _marketplace_thread_timeout(
+            db.collection("marketplace_private").document(listing_id).get
+        )
+        priv = priv_snap.to_dict() if priv_snap.exists else None
+    proj = project_listing(d, role, requester_uid=requester_uid)
+    merged = enrich_with_private_for_privileged(proj, role, requester_uid, priv)
+    if role == "owner" and requester_uid and str(d.get("uid")) != str(requester_uid):
+        merged.update(_buyer_visible_car_life_fields(d, priv))
+    return {"listing": merged}
+
+
+@app.get("/marketplace/listings/{listing_id}/car-life-report", tags=["Marketplace"])
+async def marketplace_listing_car_life_report(
+    listing_id: str,
+    decoded=Depends(require_role(["owner", "marketplace"])),
+):
+    """Serve Car Life PDF for buyers/sellers viewing a marketplace listing."""
+    use_local = _marketplace_use_local()
+    if not use_local and db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    listing_id = str(listing_id or "").strip()
+    if not listing_id:
+        raise HTTPException(status_code=400, detail="listing_id required")
+
+    if use_local:
+        public_doc = marketplace_local.get_public(listing_id) or {}
+        private_doc = marketplace_local.get_private(listing_id) or {}
+    else:
+        snap = await _marketplace_thread_timeout(
+            db.collection("marketplace").document(listing_id).get
+        )
+        if not snap.exists:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        public_doc = dict(snap.to_dict() or {})
+        priv_snap = await _marketplace_thread_timeout(
+            db.collection("marketplace_private").document(listing_id).get
+        )
+        private_doc = priv_snap.to_dict() if priv_snap.exists else {}
+
+    fields = _buyer_visible_car_life_fields(public_doc, private_doc)
+    url = str(fields.get("carLifeUrl") or "").strip()
+    if url.startswith("https://") or url.startswith("http://"):
+        return RedirectResponse(url=url, status_code=307)
+
+    local_path = _local_path_for_public_media_url(url) if url else None
+    if local_path:
+        return FileResponse(
+            local_path,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline; filename=Car_Life_Report.pdf"},
+        )
+
+    seller_uid = str(public_doc.get("uid") or "").strip()
+    if seller_uid and not use_local:
+        vehicles, inspections, appointments = await _marketplace_thread_timeout(
+            lambda: _marketplace_owner_context(seller_uid)
+        )
+        if inspections:
+            vehicle = vehicles[0] if vehicles else {}
+            plate = str(vehicle.get("plateNumber") or public_doc.get("plateNumber") or "")
+            gen_url, _ = await asyncio.to_thread(
+                _generate_car_life_local_url,
+                seller_uid,
+                plate=plate,
+                vehicle_info=vehicle,
+                inspections=inspections,
+                appointments=appointments,
+            )
+            gen_path = _local_path_for_public_media_url(gen_url or "")
+            if gen_path:
+                return FileResponse(
+                    gen_path,
+                    media_type="application/pdf",
+                    headers={"Content-Disposition": "inline; filename=Car_Life_Report.pdf"},
+                )
+
+    raise HTTPException(
+        status_code=404,
+        detail="Car life report not attached — seller must publish listing with Car Life report",
+    )
+
+
+@app.post("/marketplace/chat/send", tags=["Marketplace"])
+async def marketplace_chat_send(
+    req: MarketplaceChatSendRequest,
+    decoded=Depends(require_role(["owner", "marketplace"])),
+):
+    uid = str(decoded.get("uid") or "")
+    listing_id = str(req.listingId or "").strip()
+    body = str(req.message or "").strip()
+    if not listing_id:
+        raise HTTPException(status_code=400, detail="listingId required")
+    if not body:
+        raise HTTPException(status_code=400, detail="message required")
+    if len(body) > 2000:
+        raise HTTPException(status_code=400, detail="message too long")
+
+    use_local = _marketplace_use_local()
+    seller_uid = str(req.sellerUid or "").strip()
+    vehicle = str(req.vehicle or "").strip()[:500]
+    role = str(decoded.get("role") or "").strip().lower()
+
+    if use_local:
+        listing = marketplace_local.get_public(listing_id)
+        if not listing:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        if not seller_uid:
+            seller_uid = str(listing.get("uid") or "")
+        if not vehicle:
+            vehicle = str(listing.get("vehicle") or "")
+    else:
+        if db is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+        snap = await _marketplace_thread_timeout(db.collection("marketplace").document(listing_id).get)
+        if not snap.exists:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        listing = dict(snap.to_dict() or {})
+        if not seller_uid:
+            seller_uid = str(listing.get("uid") or "")
+        if not vehicle:
+            vehicle = str(listing.get("vehicle") or "")
+
+    if not seller_uid:
+        raise HTTPException(status_code=400, detail="sellerUid missing")
+
+    is_seller_reply = seller_uid == uid
+    buyer_uid = str(req.buyerUid or "").strip()
+    if is_seller_reply:
+        if not buyer_uid:
+            raise HTTPException(status_code=400, detail="buyerUid required for seller reply")
+    else:
+        buyer_uid = uid
+
+    row = {
+        "listingId": listing_id,
+        "vehicle": vehicle,
+        "buyerUid": buyer_uid,
+        "sellerUid": seller_uid,
+        "fromUid": uid,
+        "fromRole": "seller" if is_seller_reply else "buyer",
+        "body": body,
+        "ts": int(time.time() * 1000),
+    }
+
+    notify_uid = buyer_uid if is_seller_reply else seller_uid
+
+    if use_local:
+        saved = await asyncio.to_thread(marketplace_local.add_chat_message, row)
+    else:
+        def _write():
+            ref = db.collection("marketplaceInquiries").document()
+            ref.set({**row, "id": ref.id})
+            out = dict(row)
+            out["id"] = ref.id
+            return out
+        saved = await _marketplace_thread_timeout(_write)
+
+    if not use_local:
+        await asyncio.to_thread(
+            _notify_marketplace_chat_recipient,
+            notify_uid,
+            listing_id=listing_id,
+            vehicle=vehicle,
+            message=body,
+            from_role=row["fromRole"],
+        )
+    return {"success": True, "message": saved}
+
+
+@app.get("/marketplace/chat", tags=["Marketplace"])
+async def marketplace_chat_list(
+    listingId: Optional[str] = None,
+    decoded=Depends(require_role(["owner", "marketplace"])),
+):
+    uid = str(decoded.get("uid") or "")
+    lid = str(listingId or "").strip() or None
+    use_local = _marketplace_use_local()
+    if use_local:
+        rows = await asyncio.to_thread(marketplace_local.list_chat_rows_for_uid, uid, listing_id=lid)
+        return {"messages": rows}
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    def _read():
+        all_rows: List[dict] = []
+        q1 = db.collection("marketplaceInquiries").where("buyerUid", "==", uid).stream()
+        q2 = db.collection("marketplaceInquiries").where("sellerUid", "==", uid).stream()
+        for snap in list(q1) + list(q2):
+            d = dict(snap.to_dict() or {})
+            d["id"] = snap.id
+            if lid and str(d.get("listingId") or "") != lid:
+                continue
+            all_rows.append(d)
+        uniq: Dict[str, dict] = {}
+        for r in all_rows:
+            uniq[str(r.get("id") or f'{r.get("listingId","")}_{r.get("ts","")}')] = r
+        out = list(uniq.values())
+        out.sort(key=lambda x: int(x.get("ts") or 0))
+        return out
+
+    rows = await _marketplace_thread_timeout(_read, timeout=20.0)
+    return {"messages": rows}
+
+
+@app.get("/history/inspections", tags=["History"])
+async def history_list_inspections(decoded=Depends(require_role(["owner", "garage", "insurance", "rta", "tasjeel", "marketplace"]))):
+    dbc = _ensure_firestore_client()
+    if dbc is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    uid = str(decoded.get("uid") or "").strip()
+    if not uid:
+        raise HTTPException(status_code=401, detail="Unauthenticated")
+
+    def _read(client):
+        rows: List[dict] = []
+        for s in client.collection("users").document(uid).collection("inspections").stream():
+            d = dict(s.to_dict() or {})
+            d["id"] = d.get("id") or s.id
+            rows.append(d)
+        rows.sort(key=lambda x: int(x.get("timestamp") or 0), reverse=True)
+        return rows
+
+    try:
+        rows = await asyncio.wait_for(
+            asyncio.to_thread(lambda: firestore_with_failover(_read)),
+            timeout=60.0,
+        )
+        _sync_db_from_pool()
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=503, detail="History read timed out")
+    except HTTPException:
+        raise
+    except Exception as e:
+        if firestore_is_quota_error(e):
+            raise HTTPException(status_code=429, detail="Firestore quota exceeded for today")
+        raise HTTPException(status_code=500, detail=f"History read failed: {str(e)}")
+    return {"records": rows}
+
+
+@app.post("/history/inspections/upsert", tags=["History"])
+async def history_upsert_inspection(
+    req: InspectionHistoryUpsertRequest,
+    decoded=Depends(require_role(["owner", "garage", "insurance", "rta", "tasjeel", "marketplace"])),
+):
+    dbc = _ensure_firestore_client()
+    if dbc is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    uid = str(decoded.get("uid") or "").strip()
+    if not uid:
+        raise HTTPException(status_code=401, detail="Unauthenticated")
+    record = dict(req.record or {})
+    rid = str(req.id or record.get("id") or f"insp_{uid}_{int(time.time() * 1000)}").strip()
+    if not rid:
+        raise HTTPException(status_code=400, detail="Inspection id missing")
+    record["id"] = rid
+    if "timestamp" not in record:
+        record["timestamp"] = int(time.time() * 1000)
+    # Firestore field value size guard: avoid oversized data URLs in history docs.
+    img = record.get("image")
+    if isinstance(img, str) and (img.startswith("data:") or len(img) > 900000):
+        record["image"] = ""
+
+    def _write():
+        dbc.collection("users").document(uid).collection("inspections").document(rid).set(record, merge=True)
+
+    try:
+        await asyncio.wait_for(asyncio.to_thread(_write), timeout=60.0)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=503, detail="History write timed out")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"History write failed: {str(e)}")
+    return {"success": True, "id": rid}
+
+
+@app.get("/appointments", tags=["Appointments"])
+async def appointments_list(
+    ownerId: Optional[str] = None,
+    decoded=Depends(require_role(["owner", "garage", "insurance", "rta", "tasjeel", "marketplace"])),
+):
+    dbc = _ensure_firestore_client()
+    if dbc is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    role = str(decoded.get("role") or "").strip().lower()
+    uid = str(decoded.get("uid") or "").strip()
+
+    def _read(client):
+        rows: List[dict] = []
+        query = client.collection("appointments")
+        # Owners should only read their own appointments unless explicitly querying same ownerId.
+        if role == "owner":
+            own = uid
+            target_owner = str(ownerId or own).strip()
+            if target_owner != own:
+                raise HTTPException(status_code=403, detail="Owners may only read their own appointments")
+            query = query.where("ownerId", "==", own)
+        elif ownerId:
+            query = query.where("ownerId", "==", str(ownerId).strip())
+        for s in query.stream():
+            d = dict(s.to_dict() or {})
+            d["id"] = s.id
+            rows.append(d)
+        rows.sort(key=lambda x: int(x.get("timestamp") or 0), reverse=True)
+        return rows
+
+    try:
+        rows = await asyncio.wait_for(
+            asyncio.to_thread(lambda: firestore_with_failover(_read)),
+            timeout=35.0,
+        )
+        _sync_db_from_pool()
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=503, detail="Appointments read timed out")
+    except HTTPException:
+        raise
+    except Exception as e:
+        if firestore_is_quota_error(e):
+            raise HTTPException(status_code=429, detail="Firestore quota exceeded for today")
+        raise HTTPException(status_code=500, detail=f"Appointments read failed: {str(e)}")
+    return {"appointments": rows}
+
+
+@app.delete("/marketplace/listings/{listing_id}", tags=["Marketplace"])
+async def marketplace_delete_listing(
+    listing_id: str,
+    decoded=Depends(require_role(["owner", "marketplace"])),
+):
+    use_local = _marketplace_use_local()
+    if use_local:
+        prev = marketplace_local.get_public(listing_id)
+        if not prev:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        role = (decoded.get("role") or "").strip().lower()
+        if role == "owner" and str(prev.get("uid")) != str(decoded.get("uid")):
+            raise HTTPException(status_code=403, detail="Not your listing")
+        marketplace_local.delete_listing(listing_id)
+        return {"success": True}
+
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    ref = db.collection("marketplace").document(listing_id)
+    snap = await asyncio.to_thread(ref.get)
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    prev = snap.to_dict() or {}
+    role = (decoded.get("role") or "").strip().lower()
+    if role == "owner" and str(prev.get("uid")) != str(decoded.get("uid")):
+        raise HTTPException(status_code=403, detail="Not your listing")
+
+    def _del():
+        ref.delete()
+        db.collection("marketplace_private").document(listing_id).delete()
+
+    await asyncio.to_thread(_del)
+    return {"success": True}
+
+
+@app.patch("/marketplace/listings/{listing_id}", tags=["Marketplace"])
+async def marketplace_patch_listing(
+    listing_id: str,
+    req: MarketplaceListingPatch,
+    decoded=Depends(require_role(["marketplace", "owner"])),
+):
+    use_local = _marketplace_use_local()
+    if use_local:
+        prev = marketplace_local.get_public(listing_id)
+        if not prev:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        role = (decoded.get("role") or "").strip().lower()
+        req_dict = req.dict(exclude_none=True)
+        if role == "owner":
+            if str(prev.get("uid")) != str(decoded.get("uid")):
+                raise HTTPException(status_code=403, detail="Not your listing")
+            if set(req_dict.keys()) - {"status"}:
+                raise HTTPException(status_code=403, detail="Owners may only update listing status")
+            patch = {k: v for k, v in req_dict.items()}
+        else:
+            patch = {k: v for k, v in req_dict.items()}
+        if not patch:
+            raise HTTPException(status_code=400, detail="No fields to patch")
+        patch["updatedAt"] = time.strftime("%Y-%m-%d", time.gmtime())
+        marketplace_local.patch_public(listing_id, patch)
+        return {"success": True, "listing_id": listing_id, "patched": patch}
+
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    ref = db.collection("marketplace").document(listing_id)
+    snap = await asyncio.to_thread(ref.get)
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    prev = snap.to_dict() or {}
+    role = (decoded.get("role") or "").strip().lower()
+    req_dict = req.dict(exclude_none=True)
+    if role == "owner":
+        if str(prev.get("uid")) != str(decoded.get("uid")):
+            raise HTTPException(status_code=403, detail="Not your listing")
+        if set(req_dict.keys()) - {"status"}:
+            raise HTTPException(status_code=403, detail="Owners may only update listing status")
+        patch = {k: v for k, v in req_dict.items()}
+    else:
+        patch = {k: v for k, v in req_dict.items()}
+    if not patch:
+        raise HTTPException(status_code=400, detail="No fields to patch")
+    patch["updatedAt"] = time.strftime("%Y-%m-%d", time.gmtime())
+
+    def _upd():
+        ref.update(patch)
+
+    await asyncio.to_thread(_upd)
+    return {"success": True, "listing_id": listing_id, "patched": patch}
+
+
+@app.post("/rta/validate-plate", tags=["Marketplace", "Validation"])
+async def rta_validate_plate(
+    ctx: MarketplaceValidationContext,
+    _auth=Depends(require_role(["rta"])),
+):
+    flags = run_all_marketplace_validations(ctx.dict(), private_notes=ctx.notes or "")
+    return {"ok": bool(flags["rta_plate_valid"]), **flags}
+
+
+@app.post("/tasjeel/inspection-status", tags=["Marketplace", "Validation"])
+async def tasjeel_inspection_status(
+    ctx: MarketplaceValidationContext,
+    _auth=Depends(require_role(["tasjeel"])),
+):
+    flags = run_all_marketplace_validations(ctx.dict(), private_notes=ctx.notes or "")
+    return {"ok": bool(flags["tasjeel_inspection_ok"]), **flags}
+
+
+@app.post("/insurance/open-claims", tags=["Marketplace", "Validation"])
+async def insurance_open_claims(
+    ctx: MarketplaceValidationContext,
+    _auth=Depends(require_role(["insurance"])),
+):
+    flags = run_all_marketplace_validations(ctx.dict(), private_notes=ctx.notes or "")
+    return {"ok": bool(flags["insurance_no_open_claims"]), **flags}
+
+
+@app.post("/garage/verify-service-history", tags=["Marketplace", "Validation"])
+async def garage_verify_service_history(
+    ctx: MarketplaceValidationContext,
+    _auth=Depends(require_role(["garage"])),
+):
+    flags = run_all_marketplace_validations(ctx.dict(), private_notes=ctx.notes or "")
+    return {"ok": bool(flags["garage_service_verified"]), **flags}
+
+
+# ── Security Ledger (blockchain) ────────────────────────────────────────────
+# RTA-managed tamper-evident hash-chain securing logins and sealing sensitive
+# PDFs platform-wide. The chain is server-side so no end user can edit it.
+
+class SecurityLoginEvent(BaseModel):
+    uid: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    status: Optional[str] = "success"
+    device: Optional[str] = None
+    userAgent: Optional[str] = None
+
+
+class SecuritySealRecord(BaseModel):
+    fileHash: Optional[str] = None
+    docType: Optional[str] = "document"
+    docId: Optional[str] = None
+    fileName: Optional[str] = None
+    uid: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+
+
+class SecurityVerifyRecord(BaseModel):
+    fileHash: str
+
+
+def _seal_pdf_if_exists(path: str, doc_type: str,
+                        doc_id: Optional[str] = None,
+                        actor: Optional[dict] = None,
+                        file_name: Optional[str] = None) -> Optional[dict]:
+    """Seal a freshly generated PDF onto the security ledger (best-effort)."""
+    try:
+        if not path or not os.path.isfile(path):
+            return None
+        with open(path, "rb") as f:
+            raw = f.read()
+        return security_ledger.seal_record(
+            file_bytes=raw,
+            doc_type=doc_type,
+            doc_id=doc_id,
+            file_name=file_name or os.path.basename(path),
+            actor=actor or {},
+        )
+    except Exception as e:  # never let sealing break the main flow
+        print(f"[WARN] Ledger seal failed for {doc_type}: {e}")
+        return None
+
+
+@app.post("/api/security/login-event", tags=["Security"])
+async def security_login_event(ev: SecurityLoginEvent):
+    block = security_ledger.add_block(
+        "LOGIN",
+        {"uid": ev.uid or "anonymous", "email": ev.email or "—", "role": ev.role or "owner"},
+        {
+            "status": (ev.status or "success").lower(),
+            "device": ev.device or ev.userAgent or "Unknown device",
+            "session": hashlib.sha256(
+                f"{ev.uid}{ev.device or ev.userAgent}{time.time()}".encode()
+            ).hexdigest()[:16],
+        },
+    )
+    return {"ok": True, "block": block}
+
+
+@app.post("/api/security/seal-record", tags=["Security"])
+async def security_seal_record(rec: SecuritySealRecord):
+    if not rec.fileHash:
+        raise HTTPException(status_code=400, detail="fileHash is required")
+    block = security_ledger.seal_record(
+        file_hash=rec.fileHash.strip().lower(),
+        doc_type=rec.docType or "document",
+        doc_id=rec.docId,
+        file_name=rec.fileName,
+        actor={"uid": rec.uid or "—", "email": rec.email or "—", "role": rec.role or "—"},
+    )
+    return {"ok": True, "block": block}
+
+
+@app.post("/api/security/seal-record/upload", tags=["Security"])
+async def security_seal_record_upload(
+    file: UploadFile = File(...),
+    docType: str = Form("document"),
+    docId: Optional[str] = Form(None),
+    uid: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    role: Optional[str] = Form(None),
+):
+    raw = await file.read()
+    block = security_ledger.seal_record(
+        file_bytes=raw,
+        doc_type=docType,
+        doc_id=docId,
+        file_name=file.filename,
+        actor={"uid": uid or "—", "email": email or "—", "role": role or "—"},
+    )
+    return {"ok": True, "block": block}
+
+
+@app.post("/api/security/verify-record", tags=["Security"])
+async def security_verify_record(req: SecurityVerifyRecord):
+    return security_ledger.verify_record(file_hash=req.fileHash)
+
+
+@app.post("/api/security/verify-record/upload", tags=["Security"])
+async def security_verify_record_upload(file: UploadFile = File(...)):
+    raw = await file.read()
+    return security_ledger.verify_record(file_bytes=raw)
+
+
+@app.get("/api/security/chain", tags=["Security"])
+async def security_chain(limit: int = 0, newest_first: bool = True):
+    return {
+        "chain": security_ledger.get_chain(limit=limit or None, newest_first=newest_first),
+        "stats": security_ledger.stats(),
+    }
+
+
+@app.get("/api/security/verify", tags=["Security"])
+async def security_verify():
+    return security_ledger.verify_chain()
+
+
+@app.get("/api/security/stats", tags=["Security"])
+async def security_stats():
+    return security_ledger.stats()
+
+
+@app.get("/api/security/record/{file_hash}", tags=["Security"])
+async def security_record_download(file_hash: str):
+    path = security_ledger.vault_path_for(file_hash)
+    if not path:
+        raise HTTPException(status_code=404, detail="Sealed record not found in vault")
+    return FileResponse(path, media_type="application/pdf",
+                        filename=f"sealed_{file_hash[:12]}.pdf")
+
+
+@app.post("/api/security/seed-demo", tags=["Security"])
+async def security_seed_demo(force: bool = False):
+    return security_ledger.seed_demo(force=force)
+
+
+class SecurityAck(BaseModel):
+    sig: Optional[str] = None
+    all: bool = False
+
+
+@app.get("/api/security/monitor", tags=["Security"])
+async def security_monitor():
+    """AI Security Sentinel sweep — auto-verifies chain, records and logins."""
+    return security_ledger.scan()
+
+
+@app.post("/api/security/scan", tags=["Security"])
+async def security_scan():
+    return security_ledger.scan()
+
+
+@app.post("/api/security/alerts/ack", tags=["Security"])
+async def security_alerts_ack(req: SecurityAck):
+    return security_ledger.acknowledge_alert(sig=req.sig, all_alerts=req.all)
+
+
+@app.on_event("startup")
+async def _start_security_sentinel():
+    try:
+        security_ledger.start_monitor(interval=45)
+    except Exception as e:
+        print(f"[WARN] Could not start AI Security Sentinel: {e}")
+
+
+if os.path.isdir(FRONTEND_STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=FRONTEND_STATIC_DIR), name="static")
+else:
+    print(f"[WARN] Static dir missing: {FRONTEND_STATIC_DIR}")
+

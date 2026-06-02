@@ -1,0 +1,565 @@
+[
+  {
+    "index": 0,
+    "timestamp": 1780219364.6503284,
+    "iso": "2026-05-31T09:22:44Z",
+    "type": "GENESIS",
+    "actor": {
+      "authority": "RTA Dubai",
+      "system": "AutoVault Security Ledger"
+    },
+    "data": {
+      "note": "Genesis block — root of trust for all logins and sealed records."
+    },
+    "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "nonce": 7539,
+    "hash": "000d577546151bc637d34818d88b6a9bc7318c8fd65befe6fb8eb75f7f0d1060"
+  },
+  {
+    "index": 1,
+    "timestamp": 1780219364.699452,
+    "iso": "2026-05-31T09:22:44Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "demo_owner_3",
+      "email": "ahmed.almaktoum@mail.ae",
+      "role": "owner"
+    },
+    "data": {
+      "status": "success",
+      "device": "Chrome · Dubai",
+      "session": "9ca7817d5ad92ff6"
+    },
+    "prev_hash": "000d577546151bc637d34818d88b6a9bc7318c8fd65befe6fb8eb75f7f0d1060",
+    "nonce": 9954,
+    "hash": "000c396c22fe6debd54757c6003a72b4fde6c6fbccbfed4394ac9a5364ad35dd"
+  },
+  {
+    "index": 2,
+    "timestamp": 1780219364.7708018,
+    "iso": "2026-05-31T09:22:44Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "demo_tj_0",
+      "email": "tasjeelalbarsha@tasjeel.ae",
+      "role": "tasjeel"
+    },
+    "data": {
+      "status": "success",
+      "device": "Edge · Al Barsha",
+      "session": "d36963965ae66522"
+    },
+    "prev_hash": "000c396c22fe6debd54757c6003a72b4fde6c6fbccbfed4394ac9a5364ad35dd",
+    "nonce": 6366,
+    "hash": "0001e2298365c1965fc3753562a2bcaa978fc4a7c4b7f785d0a8ae58c418c012"
+  },
+  {
+    "index": 3,
+    "timestamp": 1780219364.8193653,
+    "iso": "2026-05-31T09:22:44Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "demo_garage_1",
+      "email": "alquozmotors@garage.ae",
+      "role": "garage"
+    },
+    "data": {
+      "status": "success",
+      "device": "Safari · Al Quoz",
+      "session": "7badb713414ba08c"
+    },
+    "prev_hash": "0001e2298365c1965fc3753562a2bcaa978fc4a7c4b7f785d0a8ae58c418c012",
+    "nonce": 844,
+    "hash": "000cd4da4e28ad54e4303c44c32d2431929b9495ab3bc277e9455e7dda11a394"
+  },
+  {
+    "index": 4,
+    "timestamp": 1780219364.8266687,
+    "iso": "2026-05-31T09:22:44Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "unknown",
+      "email": "attacker@evil.example",
+      "role": "owner"
+    },
+    "data": {
+      "status": "failed",
+      "device": "Tor · Unknown",
+      "session": "f715844ecc7ae534"
+    },
+    "prev_hash": "000cd4da4e28ad54e4303c44c32d2431929b9495ab3bc277e9455e7dda11a394",
+    "nonce": 2755,
+    "hash": "000d90af4a913e786915499805ba4f3d6b1d59d7842599252d65dae535496806"
+  },
+  {
+    "index": 5,
+    "timestamp": 1780219364.8474317,
+    "iso": "2026-05-31T09:22:44Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "demo_ins_0",
+      "email": "sukooninsurance@insure.ae",
+      "role": "insurance"
+    },
+    "data": {
+      "status": "success",
+      "device": "Chrome · DIFC",
+      "session": "eb54813aec165385"
+    },
+    "prev_hash": "000d90af4a913e786915499805ba4f3d6b1d59d7842599252d65dae535496806",
+    "nonce": 4662,
+    "hash": "0004369ab9f80356f9c4d52625fc4a893c7e9062b8e6fe93ee649b799ec9e79f"
+  },
+  {
+    "index": 6,
+    "timestamp": 1780219364.8784318,
+    "iso": "2026-05-31T09:22:44Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "demo_rta_0",
+      "email": "control@rta.ae",
+      "role": "rta"
+    },
+    "data": {
+      "status": "success",
+      "device": "Firefox · RTA HQ",
+      "session": "ca0f1861566653e4"
+    },
+    "prev_hash": "0004369ab9f80356f9c4d52625fc4a893c7e9062b8e6fe93ee649b799ec9e79f",
+    "nonce": 473,
+    "hash": "000dadb3f1bb166c0789fd680de4143465228ee08b1755ed72f26f4b52c01ff0"
+  },
+  {
+    "index": 7,
+    "timestamp": 1780219364.8844411,
+    "iso": "2026-05-31T09:22:44Z",
+    "type": "RECORD",
+    "actor": {
+      "uid": "demo_insp_3",
+      "email": "tasjeelalbarsha@tasjeel.ae",
+      "role": "tasjeel"
+    },
+    "data": {
+      "doc_type": "inspection_report",
+      "doc_id": "demo_insp_3",
+      "file_name": "Tasjeel_Inspection_A12345.pdf",
+      "file_hash": "7e4d8737b12662dfb237a2edf3ca9be0c1e22ab728616984ac8cb50c86748b86",
+      "algo": "sha256",
+      "size": 75,
+      "vaulted": true,
+      "demo": true
+    },
+    "prev_hash": "000dadb3f1bb166c0789fd680de4143465228ee08b1755ed72f26f4b52c01ff0",
+    "nonce": 4516,
+    "hash": "0001140e5a5d28ee82a9db27b58430d5f6c7cc36b5b51cde5655e361b1485b11"
+  },
+  {
+    "index": 8,
+    "timestamp": 1780219364.9198208,
+    "iso": "2026-05-31T09:22:44Z",
+    "type": "RECORD",
+    "actor": {
+      "uid": "demo_owner_3",
+      "email": "ahmed.almaktoum@mail.ae",
+      "role": "owner"
+    },
+    "data": {
+      "doc_type": "car_life_report",
+      "doc_id": "demo_owner_3",
+      "file_name": "CarLife_LandCruiser.pdf",
+      "file_hash": "5962147811784e1a318f6db1d4232ef9040262ed686e6b81172ec80062e96398",
+      "algo": "sha256",
+      "size": 70,
+      "vaulted": true,
+      "demo": true
+    },
+    "prev_hash": "0001140e5a5d28ee82a9db27b58430d5f6c7cc36b5b51cde5655e361b1485b11",
+    "nonce": 147,
+    "hash": "0005d9e259e1c5a173220030c7e8ea3fbf294c5c44c11ee8f6a42281d01123df"
+  },
+  {
+    "index": 9,
+    "timestamp": 1780219364.9248285,
+    "iso": "2026-05-31T09:22:44Z",
+    "type": "RECORD",
+    "actor": {
+      "uid": "demo_garage_1",
+      "email": "alquozmotors@garage.ae",
+      "role": "garage"
+    },
+    "data": {
+      "doc_type": "garage_service_report",
+      "doc_id": "demo_garage_1",
+      "file_name": "Service_Patrol.pdf",
+      "file_hash": "7d8810b6aceadbbb05bb8ef62cf7e2fb99586ddbd2e6b243309576d6972bab0c",
+      "algo": "sha256",
+      "size": 66,
+      "vaulted": true,
+      "demo": true
+    },
+    "prev_hash": "0005d9e259e1c5a173220030c7e8ea3fbf294c5c44c11ee8f6a42281d01123df",
+    "nonce": 3109,
+    "hash": "000e4e96da54fe599f9329dff6607166a7827a14a54982fde5ede9e37f1cad6f"
+  },
+  {
+    "index": 10,
+    "timestamp": 1780219364.9534,
+    "iso": "2026-05-31T09:22:44Z",
+    "type": "RECORD",
+    "actor": {
+      "uid": "demo_claim_2",
+      "email": "sukooninsurance@insure.ae",
+      "role": "insurance"
+    },
+    "data": {
+      "doc_type": "insurance_claim",
+      "doc_id": "demo_claim_2",
+      "file_name": "Claim_Settlement.pdf",
+      "file_hash": "faacfe13f31239bd30b1841d28c054d5fe4af47194e55e685d6fce12b72b80f4",
+      "algo": "sha256",
+      "size": 67,
+      "vaulted": true,
+      "demo": true
+    },
+    "prev_hash": "000e4e96da54fe599f9329dff6607166a7827a14a54982fde5ede9e37f1cad6f",
+    "nonce": 4337,
+    "hash": "000fed53a0321e99ddab39a97ead18bb42b642176594a1babf7c9dad63867abc"
+  },
+  {
+    "index": 11,
+    "timestamp": 1780220041.804353,
+    "iso": "2026-05-31T09:34:01Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "test1",
+      "email": "t@x.ae",
+      "role": "owner"
+    },
+    "data": {
+      "status": "success",
+      "device": "Test",
+      "session": "daaf50eafbf16fb8"
+    },
+    "prev_hash": "000fed53a0321e99ddab39a97ead18bb42b642176594a1babf7c9dad63867abc",
+    "nonce": 9489,
+    "hash": "0006f4ed2d46c7f437930dfe94395b073da7db133562547c82ff9b30233c01fd"
+  },
+  {
+    "index": 12,
+    "timestamp": 1780220363.7706757,
+    "iso": "2026-05-31T09:39:24Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "7ebq94oDEuTlcXvdp2DcNFLXyT72",
+      "email": "faizalalikhan10@gmail.com",
+      "role": "owner"
+    },
+    "data": {
+      "status": "success",
+      "device": "Chrome · Windows",
+      "session": "c7294ced0062bbb3"
+    },
+    "prev_hash": "0006f4ed2d46c7f437930dfe94395b073da7db133562547c82ff9b30233c01fd",
+    "nonce": 17589,
+    "hash": "0009ea8d0d5c5a79fe0182d49bcb696d46c0c07b6fddc5a1aa97cec782de1d23"
+  },
+  {
+    "index": 13,
+    "timestamp": 1780220494.8548095,
+    "iso": "2026-05-31T09:41:34Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "fCKU54knqsNv5CZYAd9sJX0BAnr1",
+      "email": "ahmedrashidali@gmail.com",
+      "role": "owner"
+    },
+    "data": {
+      "status": "success",
+      "device": "Chrome · Windows",
+      "session": "2d5052b05788d59d"
+    },
+    "prev_hash": "0009ea8d0d5c5a79fe0182d49bcb696d46c0c07b6fddc5a1aa97cec782de1d23",
+    "nonce": 4880,
+    "hash": "0009275f406fbaf52c3bbb8d8e45116a4e5d0fc3e3bec33d2bbbb379f73190a0"
+  },
+  {
+    "index": 14,
+    "timestamp": 1780220528.2866921,
+    "iso": "2026-05-31T09:42:08Z",
+    "type": "RECORD",
+    "actor": {},
+    "data": {
+      "doc_type": "inspection_report",
+      "doc_id": "WDDZF8DBXRA765432",
+      "file_name": "inspection_report.pdf",
+      "file_hash": "dde1d9ac5c7266634e403bd6f33187ea333c968945201237dd9496fbc15df5c8",
+      "algo": "sha256",
+      "size": 676336,
+      "vaulted": true
+    },
+    "prev_hash": "0009275f406fbaf52c3bbb8d8e45116a4e5d0fc3e3bec33d2bbbb379f73190a0",
+    "nonce": 7240,
+    "hash": "000a9752644e57ae32ce8dd09de37900a802a97de1df306370cf83d18201881b"
+  },
+  {
+    "index": 15,
+    "timestamp": 1780220560.3866625,
+    "iso": "2026-05-31T09:42:40Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "1JJtS6vVTmMtdu5ouJZb7XsgngD2",
+      "email": "ahmedalmansoori@rta.in",
+      "role": "owner"
+    },
+    "data": {
+      "status": "success",
+      "device": "Chrome · Windows",
+      "session": "cbd87db41b2858ca"
+    },
+    "prev_hash": "000a9752644e57ae32ce8dd09de37900a802a97de1df306370cf83d18201881b",
+    "nonce": 2885,
+    "hash": "000834bce28023245f0f0f4b32a9010d096603c11b7879b972ebf60adb15bb69"
+  },
+  {
+    "index": 16,
+    "timestamp": 1780220802.271745,
+    "iso": "2026-05-31T09:46:42Z",
+    "type": "RECORD",
+    "actor": {
+      "uid": "—",
+      "email": "garage@test.ae",
+      "role": "garage"
+    },
+    "data": {
+      "doc_type": "inspection_report",
+      "doc_id": "TEST-001",
+      "file_name": "test_record.pdf",
+      "file_hash": "bb04f9ec87d8a1c96cf16e198bdbabb4ee40ed8e4691281b737032d78460d6be",
+      "algo": "sha256",
+      "size": 46,
+      "vaulted": true
+    },
+    "prev_hash": "000834bce28023245f0f0f4b32a9010d096603c11b7879b972ebf60adb15bb69",
+    "nonce": 8436,
+    "hash": "00077f1464452bbc48a54087ba8a149a3ecfc2984cdfdc414e968834fb78be7f"
+  },
+  {
+    "index": 17,
+    "timestamp": 1780221149.642486,
+    "iso": "2026-05-31T09:52:29Z",
+    "type": "RECORD",
+    "actor": {
+      "uid": "—",
+      "email": "—",
+      "role": "—"
+    },
+    "data": {
+      "doc_type": "insurance_claim",
+      "doc_id": "CLAIM-TAMPER",
+      "file_name": "t2.pdf",
+      "file_hash": "d79966c786b420483aca438d47be450751dafdc65f060dc96048ee9ae3f79d11",
+      "algo": "sha256",
+      "size": 28,
+      "vaulted": true
+    },
+    "prev_hash": "00077f1464452bbc48a54087ba8a149a3ecfc2984cdfdc414e968834fb78be7f",
+    "nonce": 7216,
+    "hash": "000e549f921ef2b04c9d8877b81fa5848f84fb533d91625c4a220610b9930365"
+  },
+  {
+    "index": 18,
+    "timestamp": 1780221345.9248354,
+    "iso": "2026-05-31T09:55:45Z",
+    "type": "RECORD",
+    "actor": {
+      "uid": "—",
+      "email": "—",
+      "role": "—"
+    },
+    "data": {
+      "doc_type": "insurance_claim",
+      "doc_id": "CLAIM-TAMPER",
+      "file_name": "t2.pdf",
+      "file_hash": "d79966c786b420483aca438d47be450751dafdc65f060dc96048ee9ae3f79d11",
+      "algo": "sha256",
+      "size": 28,
+      "vaulted": true
+    },
+    "prev_hash": "000e549f921ef2b04c9d8877b81fa5848f84fb533d91625c4a220610b9930365",
+    "nonce": 9115,
+    "hash": "000103e3f0caff69f334b743193c5489a890de9485b0d53cbbe250714f06a05d"
+  },
+  {
+    "index": 19,
+    "timestamp": 1780225638.3329847,
+    "iso": "2026-05-31T11:07:18Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "KvLNU1e3rxOIpA9Gr2Ygjuxcctp1",
+      "email": "khalidsulaimann5@gmail.com",
+      "role": "owner"
+    },
+    "data": {
+      "status": "success",
+      "device": "Chrome · Windows",
+      "session": "3d18d5583ca3ac74"
+    },
+    "prev_hash": "000103e3f0caff69f334b743193c5489a890de9485b0d53cbbe250714f06a05d",
+    "nonce": 5486,
+    "hash": "000d2f2c335d34bafb9a890a9b584095cc63e3c42eb6f9d3d1891db16943585a"
+  },
+  {
+    "index": 20,
+    "timestamp": 1780226149.342841,
+    "iso": "2026-05-31T11:15:49Z",
+    "type": "RECORD",
+    "actor": {},
+    "data": {
+      "doc_type": "inspection_report",
+      "doc_id": "SALWAZ2EU1RA987654",
+      "file_name": "inspection_report.pdf",
+      "file_hash": "b3093d34a8a1a116b3b1b18720022c7f5490e1f9fe0c4fc03be99352128931da",
+      "algo": "sha256",
+      "size": 333799,
+      "vaulted": true
+    },
+    "prev_hash": "000d2f2c335d34bafb9a890a9b584095cc63e3c42eb6f9d3d1891db16943585a",
+    "nonce": 2362,
+    "hash": "000968a44a09d4b52e7b068dba061a9bd9f5cc838870837ae4b4f92cd2d8713d"
+  },
+  {
+    "index": 21,
+    "timestamp": 1780226174.5153658,
+    "iso": "2026-05-31T11:16:15Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "1JJtS6vVTmMtdu5ouJZb7XsgngD2",
+      "email": "ahmedalmansoori@rta.in",
+      "role": "owner"
+    },
+    "data": {
+      "status": "success",
+      "device": "Chrome · Windows",
+      "session": "e437213e09127bdd"
+    },
+    "prev_hash": "000968a44a09d4b52e7b068dba061a9bd9f5cc838870837ae4b4f92cd2d8713d",
+    "nonce": 9914,
+    "hash": "00067f5270338b2f296737373f5c887a69ad6a82128fddb6b4765955dc2ca01c"
+  },
+  {
+    "index": 22,
+    "timestamp": 1780226790.429454,
+    "iso": "2026-05-31T11:26:30Z",
+    "type": "ALERT",
+    "actor": {
+      "role": "system",
+      "email": "ai-sentinel"
+    },
+    "data": {
+      "sig": "vault:b3093d34a8a1a116b3b1b18720022c7f5490e1f9fe0c4fc03be99352128931da",
+      "severity": "critical",
+      "type": "document",
+      "title": "Sealed document tampered",
+      "detail": "Vaulted copy of inspection_report.pdf (block #20) no longer matches its sealed fingerprint."
+    },
+    "prev_hash": "00067f5270338b2f296737373f5c887a69ad6a82128fddb6b4765955dc2ca01c",
+    "nonce": 2117,
+    "hash": "0005402efc2ba14d1a9690174117cd711ef67f0e51e7f67c8f625df8db3b2a3c"
+  },
+  {
+    "index": 23,
+    "timestamp": 1780226790.5320659,
+    "iso": "2026-05-31T11:26:30Z",
+    "type": "ALERT",
+    "actor": {
+      "role": "system",
+      "email": "ai-sentinel"
+    },
+    "data": {
+      "sig": "login_fail:4",
+      "severity": "high",
+      "type": "auth",
+      "title": "Failed login attempt",
+      "detail": "attacker@evil.example failed authentication from Tor · Unknown (block #4)."
+    },
+    "prev_hash": "0005402efc2ba14d1a9690174117cd711ef67f0e51e7f67c8f625df8db3b2a3c",
+    "nonce": 5671,
+    "hash": "0009d498e5aac6ac14e0a4db8473e37ff6807b540e28547c02f534585dc1d60a"
+  },
+  {
+    "index": 24,
+    "timestamp": 1780228077.16414,
+    "iso": "2026-05-31T11:47:57Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "fCKU54knqsNv5CZYAd9sJX0BAnr1",
+      "email": "ahmedrashidali@gmail.com",
+      "role": "owner"
+    },
+    "data": {
+      "status": "success",
+      "device": "Chrome · Windows",
+      "session": "b78a984f4a171a7a"
+    },
+    "prev_hash": "0009d498e5aac6ac14e0a4db8473e37ff6807b540e28547c02f534585dc1d60a",
+    "nonce": 769,
+    "hash": "0008c2cecd92c80af38d5daa7372c43c7f6537b1c6013c9ca68d5cf4cd0175f4"
+  },
+  {
+    "index": 25,
+    "timestamp": 1780235126.7203135,
+    "iso": "2026-05-31T13:45:26Z",
+    "type": "LOGIN",
+    "actor": {
+      "uid": "KvLNU1e3rxOIpA9Gr2Ygjuxcctp1",
+      "email": "khalidsulaimann5@gmail.com",
+      "role": "owner"
+    },
+    "data": {
+      "status": "success",
+      "device": "Chrome · Windows",
+      "session": "ffe90aff048e39a1"
+    },
+    "prev_hash": "0008c2cecd92c80af38d5daa7372c43c7f6537b1c6013c9ca68d5cf4cd0175f4",
+    "nonce": 2986,
+    "hash": "000e9c56001778ada48e6202ea22af4b4c42c7cae573d7f198236a8298d10085"
+  },
+  {
+    "index": 26,
+    "timestamp": 1780235734.896964,
+    "iso": "2026-05-31T13:55:34Z",
+    "type": "RECORD",
+    "actor": {},
+    "data": {
+      "doc_type": "inspection_report",
+      "doc_id": "SALWAZ2EU1RA987654",
+      "file_name": "inspection_report.pdf",
+      "file_hash": "7b8dfbdfa4d8f2ac751fbccd10cf49f131d4c4228ca33b7c4dfa7e93b29d81ac",
+      "algo": "sha256",
+      "size": 335868,
+      "vaulted": true
+    },
+    "prev_hash": "000e9c56001778ada48e6202ea22af4b4c42c7cae573d7f198236a8298d10085",
+    "nonce": 1468,
+    "hash": "00043528d33a540e712fa32189f6497011fd5f756954e7c50f6a306f63ed4bbc"
+  },
+  {
+    "index": 27,
+    "timestamp": 1780240962.077293,
+    "iso": "2026-05-31T15:22:42Z",
+    "type": "RECORD",
+    "actor": {},
+    "data": {
+      "doc_type": "inspection_report",
+      "doc_id": "SALWAZ2EU1RA987654",
+      "file_name": "inspection_report.pdf",
+      "file_hash": "fd273047d51f1a25d5eb7e85e6080de0089c13d463b74687a1509883a1d357fb",
+      "algo": "sha256",
+      "size": 335968,
+      "vaulted": true
+    },
+    "prev_hash": "00043528d33a540e712fa32189f6497011fd5f756954e7c50f6a306f63ed4bbc",
+    "nonce": 279,
+    "hash": "0008ba4ef865d6bd8bcd3ad9ee89ef1bff2a97c00508301e9d3f273cd00f7b31"
+  }
+]

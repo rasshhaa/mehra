@@ -10,3 +10,5 @@ numpy
 firebase-admin
 transformers
 torch
+scipy
+noisereduce

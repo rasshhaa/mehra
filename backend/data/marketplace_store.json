@@ -1,0 +1,80 @@
+{
+  "public": {
+    "listing_f6N1Td0FrTcgGpShTmyKmHqQOZH2_1779829546532": {
+      "uid": "f6N1Td0FrTcgGpShTmyKmHqQOZH2",
+      "vehicle": "FICTION-MOTORS FICTION-SUV-TEST 2024",
+      "plateNumber": "256789",
+      "vin": "ABC123456789XY001",
+      "price": 5492.0,
+      "inspectionCount": 0,
+      "status": "active",
+      "contactRelayId": "listing_f6N1Td0FrTcgGpShTmyKmHqQOZH2_1779829546532",
+      "createdAt": "5/27/2026",
+      "updatedAt": "2026-05-28",
+      "timestamp": 1779951735130,
+      "carLifeReportAttached": false,
+      "photoUrls": [
+        "/static/marketplace_photos/listing_f6N1Td0FrTcgGpShTmyKmHqQOZH2_1779829546532/1779951735231_car-number-plate.jpg"
+      ],
+      "photoCount": 1,
+      "carLifeSummary": "FICTION-MOTORS FICTION-SUV-TEST 2024: 0 MEHRA inspection(s) on record; health score —/100. Full Car Life report attached for verified history.",
+      "buyReliabilityScore": 59,
+      "buyReliabilitySummary": "Proceed with inspection. Health —/100 · 0 inspection(s) · report no.",
+      "rta_plate_valid": true,
+      "tasjeel_inspection_ok": false,
+      "insurance_no_open_claims": true,
+      "garage_service_verified": false,
+      "photosProcessing": false
+    },
+    "listing_k4e61SHtX9ZlW5Z4ealnqwBQ0bE2_1779954608376": {
+      "uid": "k4e61SHtX9ZlW5Z4ealnqwBQ0bE2",
+      "vehicle": "FICTION-MOTORS FICTION-SUV-TEST 2024",
+      "plateNumber": "256789",
+      "vin": "ABC123456789XY001",
+      "price": 85000.0,
+      "inspectionCount": 0,
+      "status": "active",
+      "contactRelayId": "listing_k4e61SHtX9ZlW5Z4ealnqwBQ0bE2_1779954608376",
+      "createdAt": "5/28/2026",
+      "updatedAt": "2026-05-28",
+      "timestamp": 1779954610269,
+      "carLifeReportAttached": false,
+      "photoUrls": [
+        "/static/marketplace_photos/listing_k4e61SHtX9ZlW5Z4ealnqwBQ0bE2_1779954608376/1779954610433_car-number-plate.jpg"
+      ],
+      "photoCount": 1,
+      "photosProcessing": false,
+      "carLifeSummary": "FICTION-MOTORS FICTION-SUV-TEST 2024: 0 MEHRA inspection(s) on record; health score —/100. Full Car Life report attached for verified history.",
+      "buyReliabilityScore": 59,
+      "buyReliabilitySummary": "Proceed with inspection. Health —/100 · 0 inspection(s) · report no.",
+      "rta_plate_valid": true,
+      "tasjeel_inspection_ok": false,
+      "insurance_no_open_claims": true,
+      "garage_service_verified": false
+    }
+  },
+  "private": {
+    "listing_f6N1Td0FrTcgGpShTmyKmHqQOZH2_1779829546532": {
+      "ownerUid": "f6N1Td0FrTcgGpShTmyKmHqQOZH2",
+      "contact": "97150337289",
+      "notes": ""
+    },
+    "listing_k4e61SHtX9ZlW5Z4ealnqwBQ0bE2_1779954608376": {
+      "ownerUid": "k4e61SHtX9ZlW5Z4ealnqwBQ0bE2",
+      "contact": "97204929045",
+      "notes": ""
+    }
+  },
+  "chats": [
+    {
+      "listingId": "listing_f6N1Td0FrTcgGpShTmyKmHqQOZH2_1779829546532",
+      "vehicle": "FICTION-MOTORS FICTION-SUV-TEST 2024",
+      "buyerUid": "k4e61SHtX9ZlW5Z4ealnqwBQ0bE2",
+      "sellerUid": "f6N1Td0FrTcgGpShTmyKmHqQOZH2",
+      "fromUid": "k4e61SHtX9ZlW5Z4ealnqwBQ0bE2",
+      "fromRole": "buyer",
+      "body": "hi",
+      "ts": 1779953177005
+    }
+  ]
+}

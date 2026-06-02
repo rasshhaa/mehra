@@ -827,3 +827,4 @@ def generate_accident_service_report(
         "defects_addressed": sum(1 for r in readiness_rows if r.get("addressed")),
         "services_count": len(services_completed),
     }
+

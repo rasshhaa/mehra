@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "difficulty": 3,
+  "chain": [
+    {
+      "index": 0,
+      "timestamp": 1780092261.607622,
+      "kind": "genesis",
+      "payload": {
+        "msg": "AutoVault integrity ledger genesis"
+      },
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "nonce": 1942,
+      "hash": "000462c92020b4636a1b7ea665303690e9c70c7614effbfe6a30d2f962c9136f"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "sig": "vault:b3093d34a8a1a116b3b1b18720022c7f5490e1f9fe0c4fc03be99352128931da",
+    "severity": "critical",
+    "type": "document",
+    "title": "Sealed document tampered",
+    "detail": "Vaulted copy of inspection_report.pdf (block #20) no longer matches its sealed fingerprint.",
+    "at": "2026-05-31T11:26:30Z",
+    "block_index": 22,
+    "acknowledged": false
+  },
+  {
+    "sig": "login_fail:4",
+    "severity": "high",
+    "type": "auth",
+    "title": "Failed login attempt",
+    "detail": "attacker@evil.example failed authentication from Tor · Unknown (block #4).",
+    "at": "2026-05-31T11:26:30Z",
+    "block_index": 23,
+    "acknowledged": false
+  }
+]
