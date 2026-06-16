@@ -6,6 +6,7 @@ from reportlab.lib import colors
 from datetime import datetime
 import os
 import json
+import re
 from dotenv import load_dotenv
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -377,6 +378,195 @@ Respond ONLY with valid JSON, no markdown:
             "recommendations":     _fallback_recommendations(defect_details, engine_result),
             "risk_factors":        _fallback_risk_factors(defect_details, engine_result),
             "defect_explanations": {},
+        }
+
+
+def generate_tasjeel_readiness_analysis(
+    defects: list,
+    vehicle_info: dict,
+    engine_result=None,
+    overall_status: str = "ATTENTION",
+) -> dict:
+    """Groq explainability focused on UAE Tasjeel periodic inspection pass readiness."""
+    make = vehicle_info.get("make", "Unknown")
+    model = vehicle_info.get("model", "Unknown")
+    year = vehicle_info.get("year", "Unknown")
+    mileage = vehicle_info.get("mileage", "Unknown")
+
+    defect_lines = []
+    for d in defects or []:
+        if isinstance(d, (list, tuple)) and len(d) >= 2:
+            defect_lines.append(f"- {d[0]} ({d[1]}% confidence)")
+        elif isinstance(d, dict):
+            label = d.get("label") or d.get("part") or "Unknown"
+            conf = d.get("confidence", 0)
+            defect_lines.append(f"- {label} ({conf}% confidence)")
+    defect_str = "\n".join(defect_lines) if defect_lines else "No defects detected in pre-inspection."
+
+    engine_str = "Not analysed"
+    if engine_result:
+        if engine_result.get("is_knock"):
+            engine_str = f"Engine knock detected ({engine_result.get('confidence', 0)}% confidence)"
+        else:
+            engine_str = f"Engine audio: {engine_result.get('verdict', 'Normal')}"
+
+    ut = len({(d[0] if isinstance(d, (list, tuple)) else d.get("label", "")).lower() for d in (defects or []) if d})
+    base_score = 92 if ut == 0 and not (engine_result and engine_result.get("is_knock")) else max(25, 88 - ut * 12)
+
+    prompt = f"""You are a UAE Tasjeel vehicle testing centre expert. Assess whether this vehicle is likely to PASS a Tasjeel periodic inspection based on an AI pre-inspection report.
+
+Vehicle: {year} {make} {model} | Mileage: {mileage}
+Overall AI status: {overall_status}
+Engine: {engine_str}
+
+AI-detected issues (pre-inspection — not official Tasjeel result):
+{defect_str}
+
+TASJEEL FOCUS AREAS (UAE periodic test checks):
+- Brakes, steering, suspension
+- Lights, indicators, windshield visibility
+- Tyres, wheels, body structural safety
+- Emissions / engine noise (knock, excessive smoke)
+- Visible damage affecting roadworthiness
+
+SCORING:
+- readiness_score 0-100 = likelihood of passing Tasjeel if tested today
+- pass_likelihood: High (75+), Medium (50-74), Low (25-49), Unlikely (<25)
+- Be specific about which Tasjeel test categories may fail
+
+Respond ONLY with valid JSON, no markdown:
+{{
+  "readiness_score": <integer 0-100>,
+  "pass_likelihood": "<High|Medium|Low|Unlikely>",
+  "summary": "<2-3 sentences on Tasjeel readiness in plain language>",
+  "tasjeel_focus_areas": ["<Tasjeel category at risk>", "<another>"],
+  "defect_explanations": {{
+    "<defect key lowercase>": "<1 sentence: why this matters for Tasjeel and what to fix>"
+  }},
+  "recommendations": ["<fix before booking>", "<another>"],
+  "risk_factors": ["<Tasjeel-specific risk>", "<another>"]
+}}"""
+
+    raw = call_groq(prompt, system="You are a UAE Tasjeel inspection readiness advisor. Focus on pass/fail likelihood for official vehicle testing.")
+
+    try:
+        clean = raw.strip()
+        if clean.startswith("```"):
+            clean = "\n".join(clean.split("\n")[1:])
+        if clean.endswith("```"):
+            clean = "\n".join(clean.split("\n")[:-1])
+        result = json.loads(clean)
+        result["readiness_score"] = max(5, min(100, int(result.get("readiness_score", base_score))))
+        result.setdefault("pass_likelihood", "Medium" if result["readiness_score"] >= 50 else "Low")
+        result.setdefault("summary", "Review detected issues before your Tasjeel appointment.")
+        result.setdefault("tasjeel_focus_areas", [])
+        result.setdefault("recommendations", [])
+        result.setdefault("risk_factors", [])
+        result.setdefault("defect_explanations", {})
+        return result
+    except Exception as e:
+        print(f"[Groq] Tasjeel readiness JSON parse failed: {e}\nRaw: {raw}")
+        likelihood = "High" if base_score >= 75 else "Medium" if base_score >= 50 else "Low"
+        return {
+            "readiness_score": base_score,
+            "pass_likelihood": likelihood,
+            "summary": (
+                "AI pre-inspection complete. Address visible damage and engine issues before Tasjeel testing."
+                if ut else "No major defects detected — vehicle appears ready for Tasjeel testing."
+            ),
+            "tasjeel_focus_areas": ["Body & structural", "Lights & visibility"] if ut else [],
+            "recommendations": ["Fix detected defects before your appointment", "Arrive with valid insurance and registration"],
+            "risk_factors": [f"{ut} defect area(s) detected"] if ut else [],
+            "defect_explanations": {},
+        }
+
+
+def generate_tasjeel_sustainability_score(
+    pre_report: dict,
+    tasjeel_result: str,
+    tasjeel_notes: str = "",
+    reason_category: str = "",
+) -> dict:
+    """Groq explainability: did AI pre-inspection help the owner avoid Tasjeel fail/re-test costs?"""
+    ai = pre_report or {}
+    readiness = ai.get("readiness_score") or ai.get("readiness", {}).get("readiness_score")
+    likelihood = ai.get("pass_likelihood") or ai.get("readiness", {}).get("pass_likelihood") or "Unknown"
+    focus = ai.get("tasjeel_focus_areas") or ai.get("readiness", {}).get("tasjeel_focus_areas") or []
+    recs = ai.get("recommendations") or ai.get("readiness", {}).get("recommendations") or []
+    summary = ai.get("summary") or ai.get("readiness", {}).get("summary") or ""
+
+    prompt = f"""You are a UAE vehicle inspection sustainability analyst. Compare an owner's AutoVault AI pre-inspection with the official Tasjeel test outcome.
+
+UAE TASJEEL CONTEXT (use in reasoning):
+- If a vehicle FAILS Tasjeel, the owner has 30 days to repair and re-test at the SAME centre.
+- Re-test fee is AED 50 (light vehicle) vs AED 150 full test — missing the 30-day window means paying full fee again.
+- AI pre-inspection helps owners fix issues BEFORE the official test, avoiding fail, re-test trips, workshop cost, and registration delays.
+
+AI PRE-INSPECTION:
+- Readiness score: {readiness}/100
+- Pass likelihood: {likelihood}
+- Summary: {summary}
+- Focus areas flagged: {', '.join(focus) if focus else 'None'}
+- Recommendations given: {'; '.join(recs[:5]) if recs else 'None'}
+
+OFFICIAL TASJEEL RESULT: {tasjeel_result}
+Inspector notes: {tasjeel_notes or 'None'}
+Reason category: {reason_category or 'None'}
+
+Analyze whether the AI pre-inspection aligned with Tasjeel and whether it likely saved the owner money/time/emissions from avoided re-tests.
+
+Respond ONLY with valid JSON:
+{{
+  "sustainability_score": <integer 0-100 — higher = more owner/environment benefit from pre-inspection>,
+  "ai_prediction_accurate": <true|false>,
+  "retest_avoided": <true|false — true if owner passed first time and AI helped>,
+  "estimated_savings_aed": <integer estimated AED saved, 0 if none>,
+  "summary": "<2-3 sentences plain language for Tasjeel staff>",
+  "comparison_notes": ["<AI vs Tasjeel insight>", "<another>"],
+  "sustainability_factors": ["<e.g. avoided re-test trip>", "<another>"],
+  "recommendations": ["<for future owners>", "<another>"]
+}}"""
+
+    raw = call_groq(prompt, system="You assess sustainability and owner savings from AI vehicle pre-inspection before UAE Tasjeel testing.")
+
+    passed = str(tasjeel_result).lower() in ("passed", "conditional")
+    ai_high = str(likelihood).lower() == "high" or (readiness and readiness >= 75)
+    fallback_savings = 50 if passed and ai_high else 0
+    fallback_score = 78 if passed and ai_high else (55 if passed else 35)
+
+    try:
+        clean = raw.strip()
+        if clean.startswith("```"):
+            clean = "\n".join(clean.split("\n")[1:])
+        if clean.endswith("```"):
+            clean = "\n".join(clean.split("\n")[:-1])
+        result = json.loads(clean)
+        result["sustainability_score"] = max(0, min(100, int(result.get("sustainability_score", fallback_score))))
+        result.setdefault("ai_prediction_accurate", passed == ai_high)
+        result.setdefault("retest_avoided", passed and bool(recs or focus))
+        result.setdefault("estimated_savings_aed", fallback_savings)
+        result.setdefault("summary", "AI pre-inspection compared with Tasjeel outcome.")
+        result.setdefault("comparison_notes", [])
+        result.setdefault("sustainability_factors", [])
+        result.setdefault("recommendations", [])
+        return result
+    except Exception as e:
+        print(f"[Groq] Sustainability JSON parse failed: {e}\nRaw: {raw}")
+        return {
+            "sustainability_score": fallback_score,
+            "ai_prediction_accurate": passed == ai_high,
+            "retest_avoided": passed and bool(recs or focus),
+            "estimated_savings_aed": fallback_savings,
+            "summary": (
+                "Owner passed Tasjeel on first attempt — AI pre-inspection may have helped avoid a fail and AED 50 re-test fee."
+                if passed else
+                "Vehicle failed Tasjeel — compare AI focus areas with inspector notes to improve pre-inspection guidance."
+            ),
+            "comparison_notes": [
+                f"AI pass likelihood was {likelihood}; official result was {tasjeel_result}.",
+            ],
+            "sustainability_factors": ["Reduced re-test centre visits"] if passed else ["Re-test within 30 days required"],
+            "recommendations": recs[:2] if recs else ["Run AI pre-inspection before booking Tasjeel"],
         }
 
 
@@ -796,3 +986,72 @@ def generate_report(
         doc.build(story)
     except Exception as e:
         raise Exception(f"Failed to build PDF: {e}")
+
+
+def verify_annotated_capture_with_groq(
+    image_path: str,
+    defect_labels: list,
+    groq_post_fn,
+    groq_api_key: str,
+    vision_models: list,
+) -> dict:
+    """
+    Second-step QA: Groq vision verifies a Roboflow-annotated capture.
+    Returns {valid: bool, reason: str}.
+    """
+    import base64
+
+    if not os.path.exists(image_path):
+        return {"valid": False, "reason": "Image file not found"}
+
+    with open(image_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+    data_url = f"data:image/jpeg;base64,{b64}"
+
+    labels = ", ".join(defect_labels) if defect_labels else "vehicle body damage"
+    prompt = (
+        "You are a vehicle damage inspection QA expert. "
+        f"This image was annotated by an AI detector (Roboflow) claiming: {labels}. "
+        "Bounding boxes are drawn on the image. "
+        "Determine if the annotations are CORRECT — real visible vehicle damage at the marked locations. "
+        "Reply with ONLY valid JSON, no markdown: "
+        '{"valid": true or false, "reason": "brief explanation"}. '
+        "Set valid=false for false positives (reflections, shadows, background objects, "
+        "mislabeled parts, or no real damage)."
+    )
+
+    last_error = "Verification failed"
+    for model in vision_models:
+        try:
+            payload = {
+                "model": model,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": data_url, "detail": "low"}},
+                    ],
+                }],
+                "temperature": 0.0,
+                "max_tokens": 256,
+            }
+            res = groq_post_fn(payload, groq_api_key, 30)
+            if not res.ok:
+                last_error = f"HTTP {res.status_code}"
+                continue
+            text = (
+                res.json().get("choices", [{}])[0]
+                .get("message", {}).get("content", "") or ""
+            ).strip()
+            clean = re.sub(r"```json\s*|```\s*", "", text, flags=re.IGNORECASE).strip()
+            parsed = json.loads(clean)
+            return {
+                "valid": bool(parsed.get("valid")),
+                "reason": str(parsed.get("reason", ""))[:200],
+            }
+        except Exception as e:
+            last_error = str(e)
+            continue
+
+    # If Groq unavailable, accept capture (don't block pipeline)
+    return {"valid": True, "reason": f"Groq verification skipped: {last_error}"}

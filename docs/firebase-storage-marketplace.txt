@@ -1,0 +1,22 @@
+Firebase Storage paths (marketplace)
+
+  users/{uid}/marketplace_car_life/{timestamp}_{filename}
+    - Car Life PDF/HTML (owner upload or auto-sync after generate)
+    - Server also writes here when auto-generating on publish
+
+  users/{uid}/marketplace_photos/{listingId}/{timestamp}_{name}.jpg
+    - Listing photos after server PII blur (plates + faces)
+    - Written by POST /marketplace/listings/{listingId}/photos (Admin SDK)
+
+Suggested Storage rules (owner read/write own tree; public read for listing photos optional):
+
+  match /users/{userId}/marketplace_car_life/{allPaths=**} {
+    allow read, write: if request.auth != null && request.auth.uid == userId;
+  }
+  match /users/{userId}/marketplace_photos/{allPaths=**} {
+    allow read: if true;
+    allow write: if request.auth != null && request.auth.uid == userId;
+  }
+
+Firestore `marketplace/{id}` public fields (server-written only):
+  photoUrls, photoCount, carLifeSummary, buyReliabilityScore, buyReliabilitySummary

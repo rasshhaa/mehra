@@ -1,0 +1,846 @@
+/* AutoVault — automated accident report flow */
+#sec-reportAccident {
+  box-sizing: border-box;
+}
+#sec-reportAccident .acc-auto-wrap {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: clamp(16px, 2.5vw, 24px) clamp(12px, 2.5vw, 20px) 32px;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+#sec-reportAccident .acc-auto-hero h1 {
+  font-family: 'Syne', sans-serif;
+  font-size: clamp(1.5rem, 3.5vw, 2rem);
+  font-weight: 800;
+  line-height: 1.15;
+  margin: 8px 0 10px;
+}
+#sec-reportAccident .acc-auto-hero h1 em {
+  color: #d9654f;
+  font-style: italic;
+  font-weight: 500;
+}
+#sec-reportAccident .acc-auto-eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--c);
+  font-weight: 700;
+}
+#sec-reportAccident .acc-auto-hero p {
+  color: var(--tm);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  margin-bottom: 14px;
+  max-width: 56rem;
+}
+#sec-reportAccident .acc-auto-vehicle {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.82rem;
+  color: var(--tm);
+}
+#sec-reportAccident .acc-auto-pipeline {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin: 20px 0 10px;
+}
+@media (max-width: 640px) {
+  #sec-reportAccident .acc-auto-pipeline {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+#sec-reportAccident .acc-auto-pip.acc-auto-pip--skipped {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+#sec-reportAccident .acc-auto-intake-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+/* ── Chat-style incident composer ── */
+#sec-reportAccident .acc-auto-composer {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg3);
+  overflow: hidden;
+  margin-bottom: 12px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+#sec-reportAccident .acc-auto-composer:focus-within {
+  border-color: color-mix(in srgb, var(--c) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 12%, transparent);
+}
+#sec-reportAccident .acc-auto-composer.recording {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #ef4444 15%, transparent);
+}
+#sec-reportAccident .acc-auto-composer-input {
+  width: 100%;
+  min-height: 100px;
+  max-height: 200px;
+  padding: 14px 16px 8px;
+  border: none;
+  background: transparent;
+  color: var(--t);
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+}
+#sec-reportAccident .acc-auto-composer-input:focus {
+  outline: none;
+}
+#sec-reportAccident .acc-auto-composer-input::placeholder {
+  color: var(--tm);
+  opacity: 0.85;
+}
+#sec-reportAccident .acc-auto-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+#sec-reportAccident .acc-auto-composer-hint {
+  font-size: 0.72rem;
+  color: var(--tm);
+  flex: 1;
+  min-width: 0;
+}
+#sec-reportAccident .acc-auto-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+#sec-reportAccident .acc-auto-composer-mic,
+#sec-reportAccident .acc-auto-composer-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, transform 0.15s;
+}
+#sec-reportAccident .acc-auto-composer-mic {
+  background: transparent;
+  color: var(--tm);
+}
+#sec-reportAccident .acc-auto-composer-mic:hover {
+  background: var(--bg4);
+  color: var(--t);
+}
+#sec-reportAccident .acc-auto-composer-mic.recording {
+  background: color-mix(in srgb, #ef4444 18%, transparent);
+  color: #ef4444;
+  animation: acc-auto-pulse 1.2s ease-in-out infinite;
+}
+@keyframes acc-auto-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+#sec-reportAccident .acc-auto-composer-send {
+  background: var(--c);
+  color: #fff;
+}
+#sec-reportAccident .acc-auto-composer-send:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: scale(1.04);
+}
+#sec-reportAccident .acc-auto-composer-send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+#sec-reportAccident .acc-auto-formal-desc {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--tm);
+}
+#sec-reportAccident .acc-auto-formal-desc strong {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--c);
+  margin-bottom: 6px;
+}
+
+#sec-reportAccident .acc-auto-intake-card {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+}
+#sec-reportAccident .acc-auto-intake-card label {
+  display: block;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tm);
+  margin-bottom: 4px;
+}
+#sec-reportAccident .acc-auto-intake-card strong {
+  font-size: 0.88rem;
+  color: var(--t);
+}
+#sec-reportAccident .acc-auto-intake-card.yes strong { color: #4ade80; }
+#sec-reportAccident .acc-auto-intake-card.no strong { color: var(--tm); }
+#sec-reportAccident .acc-auto-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+#sec-reportAccident .acc-auto-conf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: 1px solid color-mix(in srgb, var(--c) 40%, var(--border));
+  background: color-mix(in srgb, var(--c) 12%, var(--bg3));
+  color: var(--c);
+}
+#sec-reportAccident .acc-auto-conf-badge::before {
+  content: "✓";
+  font-size: 0.7rem;
+}
+#sec-reportAccident .acc-auto-plate-card {
+  margin: 14px 0;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, #4ade80 35%, var(--border));
+  background: color-mix(in srgb, #4ade80 8%, var(--bg3));
+}
+#sec-reportAccident .acc-auto-plate-card h4 {
+  margin: 0 0 10px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #4ade80;
+}
+#sec-reportAccident .acc-auto-defect-list {
+  margin: 12px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#sec-reportAccident .acc-auto-fault-choice {
+  margin: 18px 0;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+}
+#sec-reportAccident .acc-auto-fault-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+#sec-reportAccident .acc-auto-required { color: #f59e0b; }
+#sec-reportAccident .acc-auto-fault-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 520px) {
+  #sec-reportAccident .acc-auto-fault-btns { grid-template-columns: 1fr; }
+}
+#sec-reportAccident .acc-auto-fault-btn {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  background: var(--bg4);
+  color: var(--t);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+#sec-reportAccident .acc-auto-fault-btn:hover {
+  border-color: var(--c);
+}
+#sec-reportAccident .acc-auto-fault-btn.selected {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 15%, var(--bg4));
+  color: var(--c);
+}
+#sec-reportAccident .acc-auto-garage-suggest {
+  margin: 12px 0;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  font-size: 0.82rem;
+}
+#sec-reportAccident .acc-auto-garage-suggest strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--t);
+}
+
+#sec-reportAccident .acc-auto-pip {
+  text-align: center;
+  padding: 8px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--tm);
+  background: var(--bg3);
+}
+#sec-reportAccident .acc-auto-pip span {
+  display: block;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--t);
+}
+#sec-reportAccident .acc-auto-pip.active {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  color: var(--c);
+}
+#sec-reportAccident .acc-auto-pip.done {
+  border-color: #4ade80;
+  color: #4ade80;
+}
+#sec-reportAccident .acc-auto-prog {
+  height: 4px;
+  background: var(--bg4);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+#sec-reportAccident .acc-auto-prog > div {
+  height: 100%;
+  background: linear-gradient(90deg, var(--c), #4ade80);
+  transition: width 0.35s ease;
+}
+#sec-reportAccident .acc-auto-panel {
+  width: 100%;
+}
+#sec-reportAccident .acc-auto-panel h2 {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+#sec-reportAccident .acc-auto-sub {
+  color: var(--tm);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-bottom: 16px;
+  max-width: 52rem;
+}
+#sec-reportAccident .acc-auto-scan-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 560px) {
+  #sec-reportAccident .acc-auto-scan-modes { grid-template-columns: 1fr; }
+}
+#sec-reportAccident .acc-auto-mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg3);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: border-color 0.2s, background 0.2s;
+  font: inherit;
+  color: inherit;
+  pointer-events: auto;
+  position: relative;
+  z-index: 3;
+}
+#sec-reportAccident .acc-auto-mode-card:hover {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 8%, var(--bg3));
+}
+#sec-reportAccident .acc-auto-mode-card strong {
+  font-size: 0.9rem;
+  color: var(--t);
+}
+#sec-reportAccident .acc-auto-mode-card .acc-auto-mode-desc {
+  font-size: 0.78rem;
+  color: var(--tm);
+  line-height: 1.45;
+  font-weight: 400;
+}
+#sec-reportAccident .acc-auto-mode-icon {
+  font-size: 1.25rem;
+  color: var(--c);
+  line-height: 1;
+}
+#sec-reportAccident .acc-auto-scan-area {
+  margin-bottom: 8px;
+  width: 100%;
+}
+#sec-reportAccident .acc-auto-back-btn {
+  margin: 10px 0 4px;
+  font-size: 0.8rem;
+  padding: 6px 12px;
+}
+#sec-reportAccident .acc-auto-upload-card {
+  margin-bottom: 12px;
+  width: 100%;
+}
+#sec-reportAccident .acc-auto-upload-hint {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--tm);
+}
+#sec-reportAccident .acc-auto-upload-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+#sec-reportAccident .acc-auto-upload-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+#sec-reportAccident #accAutoScanDone {
+  display: none;
+}
+#sec-reportAccident #accAutoScanDone.visible {
+  display: flex;
+  width: 100%;
+  max-width: none;
+  justify-content: center;
+}
+#sec-reportAccident .acc-auto-cam-wrap {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0a0e14;
+  aspect-ratio: 16/10;
+  max-height: min(52vh, 420px);
+  width: 100%;
+  border: 1px solid var(--border);
+}
+#sec-reportAccident .acc-auto-cam-wrap.acc-auto-cam-wrap--upload {
+  aspect-ratio: auto;
+  max-height: min(72vh, 620px);
+  min-height: 220px;
+  height: auto;
+}
+#sec-reportAccident .acc-auto-cam-wrap.is-scanning {
+  border-color: color-mix(in srgb, var(--c) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 10%, transparent);
+}
+#sec-reportAccident #accAutoVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+#sec-reportAccident .acc-auto-upload-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+#sec-reportAccident .acc-auto-cam-wrap--upload .acc-auto-upload-preview-img,
+#sec-reportAccident .acc-auto-cam-wrap--upload .acc-auto-overlay {
+  object-fit: contain;
+  object-position: center;
+}
+#sec-reportAccident .acc-auto-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 2;
+  transition: opacity 0.35s ease;
+}
+#sec-reportAccident .acc-auto-cam-wrap.has-annotation .acc-auto-overlay {
+  opacity: 0.72;
+}
+#sec-reportAccident .acc-auto-scan-corners {
+  position: absolute;
+  inset: 12px;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+#sec-reportAccident .acc-auto-cam-wrap.is-scanning .acc-auto-scan-corners {
+  opacity: 1;
+}
+#sec-reportAccident .acc-auto-scan-corners span {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 2px solid color-mix(in srgb, var(--c) 80%, #fff);
+}
+#sec-reportAccident .acc-auto-scan-corners span:nth-child(1) { top: 0; left: 0; border-right: none; border-bottom: none; }
+#sec-reportAccident .acc-auto-scan-corners span:nth-child(2) { top: 0; right: 0; border-left: none; border-bottom: none; }
+#sec-reportAccident .acc-auto-scan-corners span:nth-child(3) { bottom: 0; left: 0; border-right: none; border-top: none; }
+#sec-reportAccident .acc-auto-scan-corners span:nth-child(4) { bottom: 0; right: 0; border-left: none; border-top: none; }
+#sec-reportAccident .acc-auto-scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 3;
+  background: linear-gradient(90deg, transparent, var(--c), #fff, var(--c), transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--c) 70%, transparent);
+  opacity: 0;
+  top: 0;
+  pointer-events: none;
+}
+#sec-reportAccident .acc-auto-cam-wrap.is-scanning .acc-auto-scan-line {
+  opacity: 1;
+  animation: acc-auto-scan-sweep 1.4s ease-in-out infinite;
+}
+@keyframes acc-auto-scan-sweep {
+  0% { top: 8%; }
+  50% { top: 88%; }
+  100% { top: 8%; }
+}
+#sec-reportAccident .acc-auto-scan-hud {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  padding: 12px 14px 14px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.82));
+  color: #fff;
+  font-size: 0.78rem;
+  font-family: var(--font-mono, monospace);
+}
+#sec-reportAccident .acc-auto-scan-progress {
+  margin-top: 8px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+#sec-reportAccident #accAutoScanProgressFill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--ca), var(--cb));
+  transition: width 0.25s ease;
+}
+#sec-reportAccident .acc-auto-status {
+  margin: 12px 0;
+  font-size: 0.82rem;
+  color: var(--tm);
+  line-height: 1.5;
+}
+#sec-reportAccident .acc-auto-tags-row {
+  font-size: 0.78rem;
+  color: var(--tm);
+  margin-bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+#sec-reportAccident .acc-auto-tag {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--c) 15%, transparent);
+  color: var(--c);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+#sec-reportAccident .acc-auto-summary {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+}
+#sec-reportAccident .acc-auto-pill {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--bg4);
+  font-size: 0.72rem;
+}
+#sec-reportAccident .acc-auto-btn {
+  width: 100%;
+  max-width: none;
+  margin-top: 8px;
+  justify-content: center;
+}
+#sec-reportAccident .acc-auto-evidence-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+@media (max-width: 560px) {
+  #sec-reportAccident .acc-auto-evidence-grid { grid-template-columns: 1fr; }
+}
+#sec-reportAccident .acc-auto-file-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--t);
+  width: 100%;
+  box-sizing: border-box;
+}
+#sec-reportAccident .acc-auto-file-card input[type="file"] {
+  font-size: 0.75rem;
+  width: 100%;
+  max-width: 100%;
+}
+#sec-reportAccident .acc-auto-confirm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px 16px;
+  margin-bottom: 16px;
+}
+#sec-reportAccident .acc-auto-confirm-grid label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tm);
+  margin-bottom: 2px;
+}
+#sec-reportAccident .acc-auto-disclaimer {
+  font-size: 0.78rem;
+  color: var(--tm);
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
+}
+#sec-reportAccident .acc-auto-success {
+  text-align: center;
+  padding: 32px 16px;
+}
+#sec-reportAccident .acc-auto-success-ring {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: color-mix(in srgb, #4ade80 20%, transparent);
+  color: #4ade80;
+  font-size: 1.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+  font-weight: 800;
+}
+#sec-reportAccident .acc-auto-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* ── Damage scan results (inspection-style) ── */
+#sec-reportAccident .acc-auto-scan-results {
+  margin: 16px 0 20px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--c) 6%, var(--bg3)), var(--bg3));
+}
+#sec-reportAccident .acc-auto-results-head {
+  margin-bottom: 14px;
+}
+#sec-reportAccident .acc-auto-results-eyebrow {
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--c);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+#sec-reportAccident .acc-auto-results-head strong {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.05rem;
+  color: var(--t);
+}
+#sec-reportAccident .acc-auto-hero-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+@media (max-width: 720px) {
+  #sec-reportAccident .acc-auto-hero-pair { grid-template-columns: 1fr; }
+}
+#sec-reportAccident .acc-auto-hero-shot {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0a0e14;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  max-height: min(56vh, 520px);
+}
+#sec-reportAccident .acc-auto-hero-shot img {
+  width: 100%;
+  height: auto;
+  max-height: min(56vh, 520px);
+  object-fit: contain;
+  display: block;
+}
+#sec-reportAccident .acc-auto-shot-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase;
+}
+#sec-reportAccident .acc-auto-shot-badge.original {
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+}
+#sec-reportAccident .acc-auto-shot-badge.annotated {
+  background: rgba(74, 222, 128, 0.92);
+  color: #0a1628;
+}
+#sec-reportAccident .acc-auto-shot-caption {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 10px 12px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.82));
+  color: #e8edf5;
+  font-size: 0.75rem;
+}
+#sec-reportAccident .acc-auto-damage-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+#sec-reportAccident .acc-auto-gallery-tile {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  aspect-ratio: auto;
+  min-height: 120px;
+  max-height: 200px;
+  background: #0a0e14;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#sec-reportAccident .acc-auto-gallery-tile img {
+  width: 100%;
+  height: auto;
+  max-height: 200px;
+  object-fit: contain;
+}
+#sec-reportAccident .acc-auto-gallery-tile .acc-auto-shot-badge {
+  top: 6px;
+  left: 6px;
+  font-size: 0.58rem;
+  padding: 2px 7px;
+}
+
+/* ── Evidence large previews ── */
+#sec-reportAccident .acc-auto-evidence-preview {
+  margin: 16px 0;
+}
+#sec-reportAccident .acc-auto-evidence-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 720px) {
+  #sec-reportAccident .acc-auto-evidence-hero-grid { grid-template-columns: 1fr; }
+}
+#sec-reportAccident .acc-auto-evidence-hero-card {
+  margin: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+}
+#sec-reportAccident .acc-auto-ev-label {
+  padding: 10px 14px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--c);
+  font-family: 'JetBrains Mono', monospace;
+}
+#sec-reportAccident .acc-auto-scan-results--compact {
+  margin-top: 0;
+  margin-bottom: 18px;
+  padding: 12px;
+}
+#sec-reportAccident .acc-auto-scan-results--compact .acc-auto-hero-shot {
+  min-height: min(28vh, 220px);
+}
+#sec-reportAccident .acc-auto-evidence-hero-card img {
+  width: 100%;
+  min-height: min(36vh, 280px);
+  max-height: 420px;
+  object-fit: contain;
+  background: #0a0f18;
+  display: block;
+}

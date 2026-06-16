@@ -243,6 +243,79 @@ def seal_record(file_bytes: Optional[bytes] = None, *,
     return add_block("RECORD", actor or {}, data)
 
 
+def log_accident_claim(
+    claim_id: str,
+    payload: Dict[str, Any],
+    actor: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Hash accident claim intake data (SHA-256) and append a RECORD block.
+    Used to show 'Blockchain Verified' on Car Life accident entries.
+    """
+    canonical = _canonical({
+        "claim_id": str(claim_id or "").strip(),
+        "payload": payload or {},
+    })
+    file_hash = _sha256_bytes(canonical.encode("utf-8"))
+    data: Dict[str, Any] = {
+        "doc_type": "accident_claim",
+        "doc_id": str(claim_id or "")[:128],
+        "file_name": f"accident_claim_{claim_id}.json",
+        "file_hash": file_hash,
+        "algo": "sha256",
+        "vaulted": False,
+        "payload_keys": sorted((payload or {}).keys()),
+    }
+    block = add_block("RECORD", actor or {}, data)
+    return {
+        "file_hash": file_hash,
+        "block_index": block["index"],
+        "block_hash": block["hash"],
+        "sealed_at": block["iso"],
+        "claim_id": claim_id,
+    }
+
+
+def verify_accident_claim(claim_id: Optional[str] = None,
+                          file_hash: Optional[str] = None) -> Dict[str, Any]:
+    """Return whether an accident claim hash exists on the ledger."""
+    cid = str(claim_id or "").strip()
+    fh = str(file_hash or "").strip().lower()
+    with _lock:
+        chain = list(_load())
+    for block in chain:
+        if block.get("type") != "RECORD":
+            continue
+        data = block.get("data") or {}
+        if str(data.get("doc_type") or "") != "accident_claim":
+            continue
+        if cid and str(data.get("doc_id") or "") == cid:
+            return {
+                "verified": True,
+                "match": True,
+                "claim_id": cid,
+                "file_hash": data.get("file_hash"),
+                "block_index": block["index"],
+                "sealed_at": block.get("iso"),
+            }
+        if fh and str(data.get("file_hash") or "").lower() == fh:
+            return {
+                "verified": True,
+                "match": True,
+                "claim_id": data.get("doc_id"),
+                "file_hash": fh,
+                "block_index": block["index"],
+                "sealed_at": block.get("iso"),
+            }
+    return {
+        "verified": False,
+        "match": False,
+        "claim_id": cid or None,
+        "file_hash": fh or None,
+        "reason": "No matching accident claim on the security ledger.",
+    }
+
+
 def verify_record(file_hash: Optional[str] = None,
                   file_bytes: Optional[bytes] = None) -> Dict[str, Any]:
     """

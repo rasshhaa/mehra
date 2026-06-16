@@ -18,5 +18,45 @@
     "at": "2026-05-31T11:26:30Z",
     "block_index": 23,
     "acknowledged": false
+  },
+  {
+    "sig": "login_fail:50",
+    "severity": "medium",
+    "type": "auth",
+    "title": "Failed login attempt",
+    "detail": "profix.autocenter@gmail.com failed authentication from Chrome · Windows (block #50).",
+    "at": "2026-06-04T18:55:29Z",
+    "block_index": 51,
+    "acknowledged": false
+  },
+  {
+    "sig": "login_fail:52",
+    "severity": "medium",
+    "type": "auth",
+    "title": "Failed login attempt",
+    "detail": "profix.autocenter@gmail.com failed authentication from Chrome · Windows (block #52).",
+    "at": "2026-06-04T18:56:03Z",
+    "block_index": 53,
+    "acknowledged": false
+  },
+  {
+    "sig": "login_fail:67",
+    "severity": "medium",
+    "type": "auth",
+    "title": "Failed login attempt",
+    "detail": "abc@tasjeeldeira.com failed authentication from Chrome · Windows (block #67).",
+    "at": "2026-06-06T04:55:13Z",
+    "block_index": 68,
+    "acknowledged": false
+  },
+  {
+    "sig": "login_fail:69",
+    "severity": "medium",
+    "type": "auth",
+    "title": "Failed login attempt",
+    "detail": "abc@tasjeeldeira.com failed authentication from Chrome · Windows (block #69).",
+    "at": "2026-06-06T04:55:58Z",
+    "block_index": 71,
+    "acknowledged": false
   }
 ]

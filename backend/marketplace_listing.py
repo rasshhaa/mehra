@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 from copy import deepcopy
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from pii_redaction import redact_pii
@@ -134,27 +135,221 @@ def vehicle_owned_by_user(
     return False
 
 
+HEALTH_SCORE_WEIGHTS = {
+    "inspection": ("Inspection Results", 40),
+    "accident_free": ("Accident-Free History", 30),
+    "service": ("Service Records", 20),
+    "age_mileage": ("Age & Mileage", 10),
+}
+
+
+def _clamp_score(n: float) -> int:
+    return max(0, min(100, int(round(n))))
+
+
+def _title_case_vehicle_words(text: str) -> str:
+    """Title-case vehicle names; keep short joiners lowercase except at start."""
+    raw = re.sub(r"\s+", " ", (text or "").strip())
+    if not raw:
+        return ""
+    small = {"and", "or", "of", "the", "in", "at", "for", "to", "a", "an"}
+    parts = []
+    for i, word in enumerate(raw.split(" ")):
+        w = word.strip()
+        if not w:
+            continue
+        if "-" in w:
+            w = "-".join(
+                p.capitalize() if p else ""
+                for p in w.split("-")
+            )
+        elif i > 0 and w.lower() in small:
+            w = w.lower()
+        else:
+            w = w[0].upper() + w[1:].lower() if len(w) > 1 else w.upper()
+        parts.append(w)
+    return " ".join(parts)
+
+
+def _dedupe_vehicle_tokens(tokens: List[str]) -> List[str]:
+    """Remove repeated brand prefix e.g. LAND ROVER LAND ROVER-SUV -> LAND ROVER SUV."""
+    t = [x for x in tokens if x]
+    if not t:
+        return t
+    upper = [x.upper() for x in t]
+    for n in range(min(4, len(t) // 2), 0, -1):
+        if upper[:n] == upper[n : 2 * n]:
+            t = t[n:]
+            break
+    return t
+
+
+def format_listing_vehicle_display(
+    *,
+    make: str = "",
+    body_type: str = "",
+    year: str = "",
+    vehicle: str = "",
+) -> str:
+    """
+    Build a clean display name: Title Case, no duplicate brand prefix.
+    Example: Land Rover Defender 2024 (not LAND ROVER LAND ROVER-SUV-TEST 2024).
+    """
+    mk = (make or "").strip()
+    bt = (body_type or "").strip()
+    yr = str(year or "").strip()
+    if yr in ("—", "-", ""):
+        yr = ""
+
+    if mk or bt:
+        mk_u = mk.upper()
+        bt_work = bt
+        if bt_work.upper().startswith(mk_u):
+            bt_work = bt_work[len(mk) :].lstrip(" -_/")
+        bt_tokens = re.split(r"[\s\-_/]+", bt_work)
+        mk_tokens = mk.split()
+        while bt_tokens and mk_tokens and bt_tokens[0].upper() == mk_tokens[0].upper():
+            bt_tokens.pop(0)
+            mk_tokens.pop(0)
+        name_bits = []
+        if mk:
+            name_bits.append(_title_case_vehicle_words(mk))
+        if bt_tokens:
+            name_bits.append(_title_case_vehicle_words(" ".join(bt_tokens)))
+        name = " ".join(name_bits).strip()
+        if yr and re.match(r"^(19|20)\d{2}$", yr):
+            name = f"{name} {yr}".strip()
+        return name or "Vehicle"
+
+    raw = (vehicle or "").strip()
+    if not raw or raw == "—":
+        return "Vehicle"
+
+    year_suffix = ""
+    ym = re.search(r"\b((?:19|20)\d{2})\b\s*$", raw)
+    if ym:
+        year_suffix = ym.group(1)
+        raw = raw[: ym.start()].strip()
+
+    tokens = _dedupe_vehicle_tokens(re.split(r"[\s\-_/]+", raw))
+    name = _title_case_vehicle_words(" ".join(tokens))
+    if year_suffix:
+        name = f"{name} {year_suffix}".strip()
+    return name or "Vehicle"
+
+
+def compute_marketplace_health_score(
+    inspections: List[Dict[str, Any]],
+    appointments: Optional[List[Dict[str, Any]]] = None,
+    claims: Optional[List[Dict[str, Any]]] = None,
+    vehicle: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Weighted health score for marketplace listings:
+    Inspection 40%, Accident-Free 30%, Service 20%, Age & Mileage 10%.
+    """
+    inspections = list(inspections or [])
+    appointments = list(appointments or [])
+    claims = list(claims or [])
+
+    if inspections:
+        latest = inspections[0]
+        if latest.get("score") is not None:
+            try:
+                insp_score = _clamp_score(float(latest["score"]))
+            except (TypeError, ValueError):
+                insp_score = 70
+        else:
+            total = len(inspections)
+            passed = sum(1 for r in inspections if (r.get("status") or "").lower() == "pass")
+            defects = sum(int(r.get("defects") or 0) for r in inspections)
+            knock = sum(1 for r in inspections if r.get("engineKnock") is True)
+            insp_score = _clamp_score(100 - (defects * 5) - (knock * 15) - ((total - passed) * 8))
+    else:
+        insp_score = 50
+
+    accident_rows = [
+        c
+        for c in claims
+        if c.get("accidentTicket") or str(c.get("source") or "") == "owner_self_report"
+    ]
+    if not accident_rows:
+        accident_score = 100
+    else:
+        open_or_bad = sum(
+            1
+            for c in accident_rows
+            if str(c.get("status") or "").lower()
+            not in ("approved", "confirmed", "complete", "garage_complete", "authorized")
+        )
+        accident_score = _clamp_score(100 - len(accident_rows) * 22 - open_or_bad * 12)
+
+    service_appts = [
+        a
+        for a in appointments
+        if not a.get("accidentClaimId")
+        and "accident" not in str(a.get("service") or "").lower()
+    ]
+    n_svc = len(service_appts)
+    service_score = _clamp_score(45 + min(n_svc, 4) * 14) if n_svc else 42
+
+    age_score = 80
+    year_val: Optional[int] = None
+    mileage_val: Optional[int] = None
+    if vehicle:
+        try:
+            year_val = int(re.sub(r"\D", "", str(vehicle.get("year") or ""))[:4])
+        except (TypeError, ValueError):
+            year_val = None
+        try:
+            mileage_val = int(re.sub(r"\D", "", str(vehicle.get("mileage") or "")))
+        except (TypeError, ValueError):
+            mileage_val = None
+    if year_val and 1900 < year_val <= datetime.now().year + 1:
+        years_old = max(0, datetime.now().year - year_val)
+        age_score = _clamp_score(100 - max(0, years_old - 2) * 5)
+    if mileage_val:
+        if mileage_val > 220000:
+            age_score = min(age_score, 32)
+        elif mileage_val > 140000:
+            age_score = min(age_score, 52)
+        elif mileage_val < 40000:
+            age_score = min(100, age_score + 5)
+
+    breakdown: List[Dict[str, Any]] = []
+    weighted_total = 0.0
+    for key, (label, weight) in HEALTH_SCORE_WEIGHTS.items():
+        score_map = {
+            "inspection": insp_score,
+            "accident_free": accident_score,
+            "service": service_score,
+            "age_mileage": age_score,
+        }
+        sc = score_map[key]
+        breakdown.append(
+            {
+                "key": key,
+                "label": label,
+                "weight": weight,
+                "score": sc,
+                "contribution": round(sc * weight / 100.0, 1),
+            }
+        )
+        weighted_total += sc * weight / 100.0
+
+    total = _clamp_score(weighted_total)
+    return {
+        "score": total,
+        "breakdown": breakdown,
+        "formula": "Inspection 40% + Accident-Free 30% + Service 20% + Age & Mileage 10%",
+    }
+
+
 def compute_health_score_from_records(records: List[Dict[str, Any]]) -> Optional[int]:
-    """Mirror frontend heuristic: latest score or synthetic from defects."""
+    """Backward-compatible single score from inspection records only."""
     if not records:
         return None
-    latest = records[0]
-    if latest.get("score") is not None:
-        try:
-            return max(0, min(100, int(latest["score"])))
-        except (TypeError, ValueError):
-            pass
-    total = len(records)
-    passed = sum(1 for r in records if (r.get("status") or "").lower() == "pass")
-    defects = sum(int(r.get("defects") or 0) for r in records)
-    knock = sum(1 for r in records if r.get("engineKnock") is True)
-    return max(
-        0,
-        min(
-            100,
-            int(round(100 - (defects * 5) - (knock * 15) - ((total - passed) * 8))),
-        ),
-    )
+    return compute_marketplace_health_score(records).get("score")
 
 
 def _is_allowed_public_media_url(url: Any) -> bool:
@@ -178,6 +373,8 @@ def build_public_listing_doc(
     vin_display: str,
     price: float,
     health_score: Optional[int],
+    health_score_breakdown: Optional[List[Dict[str, Any]]] = None,
+    health_score_formula: str = "",
     inspection_count: int,
     status: str,
     created_at: Optional[str],
@@ -204,6 +401,8 @@ def build_public_listing_doc(
         "vin": vin_display.strip()[:32],
         "price": price,
         "healthScore": health_score,
+        "healthScoreBreakdown": health_score_breakdown,
+        "healthScoreFormula": (health_score_formula or "").strip()[:200] or None,
         "inspectionCount": inspection_count,
         "status": status[:32],
         "contactRelayId": contact_relay_id,
@@ -334,12 +533,18 @@ def _listing_media_fields(doc: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _format_listing_vehicle_from_doc(doc: Dict[str, Any]) -> str:
+    return format_listing_vehicle_display(vehicle=str(doc.get("vehicle") or ""))
+
+
 def _public_projection(doc: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": doc.get("id"),
-        "vehicle": redact_pii(str(doc.get("vehicle") or "")),
+        "vehicle": redact_pii(_format_listing_vehicle_from_doc(doc)),
         "price": doc.get("price"),
         "healthScore": doc.get("healthScore"),
+        "healthScoreBreakdown": doc.get("healthScoreBreakdown"),
+        "healthScoreFormula": doc.get("healthScoreFormula"),
         "inspectionCount": doc.get("inspectionCount"),
         "status": doc.get("status"),
         "timestamp": doc.get("timestamp"),
@@ -361,11 +566,13 @@ def _public_projection(doc: Dict[str, Any]) -> Dict[str, Any]:
 def _stakeholder_projection(doc: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": doc.get("id"),
-        "vehicle": str(doc.get("vehicle") or ""),
+        "vehicle": _format_listing_vehicle_from_doc(doc),
         "price": doc.get("price"),
         "plateNumber": doc.get("plateNumber"),
         "vin": mask_vin(str(doc.get("vin") or "")),
         "healthScore": doc.get("healthScore"),
+        "healthScoreBreakdown": doc.get("healthScoreBreakdown"),
+        "healthScoreFormula": doc.get("healthScoreFormula"),
         "inspectionCount": doc.get("inspectionCount"),
         "status": doc.get("status"),
         "timestamp": doc.get("timestamp"),
@@ -403,6 +610,7 @@ def project_listing(
         d = deepcopy(doc)
         for k in ("contact", "notes", "carLifeUrl", "carLifeFileName"):
             d.pop(k, None)
+        d["vehicle"] = _format_listing_vehicle_from_doc(d)
         return d
 
     if r == "owner":
@@ -410,6 +618,10 @@ def project_listing(
             d = deepcopy(doc)
             for k in ("contact", "notes", "carLifeUrl", "carLifeFileName"):
                 d.pop(k, None)
+            d["vehicle"] = _format_listing_vehicle_from_doc(d)
+            d["vin"] = str(doc.get("vin") or "").strip() or "—"
+            if doc.get("plateNumber"):
+                d["plateNumber"] = doc.get("plateNumber")
             return d
         return _public_projection(doc)
 
