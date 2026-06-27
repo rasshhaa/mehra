@@ -123,8 +123,19 @@ def _validate_primary_service_account(cred_path: str) -> None:
         )
 
 
+def _resolve_service_account_path() -> str:
+    """On Vercel, paste service account JSON into FIREBASE_SERVICE_ACCOUNT_JSON."""
+    json_body = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+    if json_body:
+        p = "/tmp/serviceAccountKey.json"
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(json_body)
+        return p
+    return os.path.join(_HERE, "serviceAccountKey.json")
+
+
 try:
-    _cred_path = os.path.join(_HERE, "serviceAccountKey.json")
+    _cred_path = _resolve_service_account_path()
     _cred_secondary = os.getenv("FIREBASE_SERVICE_ACCOUNT_SECONDARY", "").strip()
     if _cred_secondary and not os.path.isabs(_cred_secondary):
         _cred_secondary = os.path.join(_HERE, _cred_secondary)
@@ -522,8 +533,18 @@ SEVERITY_MODEL_ID = "car-damage-severity-detection-cardd/1"
 _executor = ThreadPoolExecutor(max_workers=4)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-UPLOAD_DIR = "uploads"
-STATIC_DIR = FRONTEND_STATIC_DIR
+_IS_VERCEL = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
+
+if _IS_VERCEL:
+    _VERCEL_DATA = "/tmp/autovault"
+    UPLOAD_DIR = os.path.join(_VERCEL_DATA, "uploads")
+    WRITABLE_STATIC_DIR = os.path.join(_VERCEL_DATA, "static")
+    STATIC_DIR = WRITABLE_STATIC_DIR
+else:
+    UPLOAD_DIR = "uploads"
+    WRITABLE_STATIC_DIR = FRONTEND_STATIC_DIR
+    STATIC_DIR = FRONTEND_STATIC_DIR
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 
@@ -535,6 +556,20 @@ os.makedirs(OFFICIAL_ACCIDENTS_DIR, exist_ok=True)
 CARLIFE_REPORT_PATH = os.path.join(STATIC_DIR, "carlife_report.pdf")
 TASJEEL_REPORTS_DIR = os.path.join(STATIC_DIR, "tasjeel_reports")
 os.makedirs(TASJEEL_REPORTS_DIR, exist_ok=True)
+
+
+def _resolve_static_file(rel_path: str) -> Optional[str]:
+    rel = rel_path.lstrip("/").replace("\\", "/")
+    if ".." in rel.split("/"):
+        return None
+    for base in (WRITABLE_STATIC_DIR, FRONTEND_STATIC_DIR):
+        base_norm = os.path.normpath(base)
+        full = os.path.normpath(os.path.join(base_norm, rel))
+        if not full.startswith(base_norm + os.sep) and full != base_norm:
+            continue
+        if os.path.isfile(full):
+            return full
+    return None
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_VISION_MODELS = [
@@ -1670,6 +1705,11 @@ async def ai_analysis_endpoint(req: AIAnalysisRequest):
 
 @app.post("/analyze-engine")
 async def analyze_engine(audio: UploadFile = File(...), _token=Depends(verify_token)):
+    if _IS_VERCEL:
+        raise HTTPException(
+            status_code=503,
+            detail="Engine audio analysis is unavailable on Vercel (torch/librosa not bundled). Use photo inspection instead.",
+        )
     try:
         return await _analyze_engine_upload(audio)
     except HTTPException:
@@ -4498,12 +4538,8 @@ def _local_path_for_public_media_url(url: str) -> Optional[str]:
     s = str(url or "").strip()
     if not s.startswith("/static/"):
         return None
-    rel = s[len("/static/") :].replace("\\", "/")
-    path = os.path.normpath(os.path.join(FRONTEND_STATIC_DIR, rel))
-    base = os.path.normpath(FRONTEND_STATIC_DIR)
-    if not path.startswith(base):
-        return None
-    return path if os.path.isfile(path) else None
+    rel = s[len("/static/") :]
+    return _resolve_static_file(rel)
 
 
 def _notify_marketplace_chat_recipient(
@@ -6263,6 +6299,8 @@ async def security_alerts_ack(req: SecurityAck):
 
 @app.on_event("startup")
 async def _start_security_sentinel():
+    if _IS_VERCEL:
+        return
     try:
         security_ledger.start_monitor(interval=45)
     except Exception as e:
@@ -6270,7 +6308,17 @@ async def _start_security_sentinel():
 
 
 if os.path.isdir(FRONTEND_STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=FRONTEND_STATIC_DIR), name="static")
+    if _IS_VERCEL:
+
+        @app.get("/static/{file_path:path}")
+        async def vercel_static_files(file_path: str):
+            full = _resolve_static_file(file_path)
+            if not full:
+                raise HTTPException(status_code=404, detail="Not found")
+            return FileResponse(full)
+
+    else:
+        app.mount("/static", StaticFiles(directory=FRONTEND_STATIC_DIR), name="static")
 else:
     print(f"[WARN] Static dir missing: {FRONTEND_STATIC_DIR}")
 

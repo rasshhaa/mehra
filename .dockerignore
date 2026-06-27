@@ -1,0 +1,11 @@
+backend/uploads/**
+backend/__pycache__
+backend/**/__pycache__
+backend/.env
+backend/.venv
+backend/*.json
+!backend/serviceAccountKey.json
+frontend/scripts
+**/.git
+**/.venv
+**/*.pyc

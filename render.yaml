@@ -1,0 +1,24 @@
+# Render Blueprint — full app (engine audio + inspection + Firebase)
+# Dashboard → New → Blueprint → connect github.com/rasshhaa/mehra (repo root = backend + frontend)
+services:
+  - type: web
+    name: autovault
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: standard
+    region: frankfurt
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: USE_FIRESTORE
+        value: "1"
+      - key: FIREBASE_PRIMARY_PROJECT_ID
+        value: mehra-b3a7c
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ROBOFLOW_API_KEY
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
