@@ -1308,6 +1308,9 @@ ENGINE_HF_MODEL = os.getenv("ENGINE_HF_MODEL", "cxlrd/revix-AST-engine-knock").s
 HF_TOKEN = (os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY") or "").strip()
 ENGINE_INFERENCE_URL = os.getenv("ENGINE_INFERENCE_URL", "").strip()
 ENGINE_MODE = os.getenv("ENGINE_MODE", "auto").strip().lower()
+HF_INFERENCE_BASE = os.getenv(
+    "HF_INFERENCE_BASE", "https://router.huggingface.co/hf-inference"
+).rstrip("/")
 
 KNOCK_LABEL_KEYS = {"knock", "knocking", "engine_knock", "defective", "fault", "faulty"}
 CLEAN_LABEL_KEYS = {"no_knock", "no knock", "clean", "healthy", "normal", "ok", "good"}
@@ -1384,10 +1387,43 @@ def _analyze_engine_via_hf_api(wav_path: str, filename: str) -> dict:
             detail="Cloud engine analysis needs HF_TOKEN (free Hugging Face account).",
         )
     model = ENGINE_HF_MODEL or "cxlrd/revix-AST-engine-knock"
-    url = f"https://api-inference.huggingface.co/models/{model}"
+
+    # Prefer huggingface_hub (routes via router.huggingface.co automatically)
+    try:
+        from huggingface_hub import InferenceClient
+
+        client = InferenceClient(token=HF_TOKEN)
+        rows = None
+        last_err = None
+        for _ in range(6):
+            try:
+                rows = client.audio_classification(wav_path, model=model)
+                break
+            except Exception as e:
+                last_err = e
+                if "loading" in str(e).lower():
+                    time.sleep(12)
+                    continue
+                raise
+        if rows is None:
+            raise HTTPException(status_code=502, detail=f"Engine inference failed: {last_err}")
+        scores = {str(item.label): float(item.score) for item in rows}
+        return _engine_result_from_scores(
+            scores, filename=filename, wav_path=wav_path, model=model, inference="huggingface-api",
+        )
+    except HTTPException:
+        raise
+    except ImportError:
+        pass
+
+    # Fallback: direct HTTP to HF Inference router (api-inference.huggingface.co is deprecated)
+    url = f"{HF_INFERENCE_BASE}/models/{model}"
     with open(wav_path, "rb") as f:
         audio_bytes = f.read()
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}",
+        "Content-Type": "audio/wav",
+    }
     response = None
     for _ in range(6):
         response = requests.post(url, headers=headers, data=audio_bytes, timeout=120)

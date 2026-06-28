@@ -6,6 +6,7 @@ python-multipart
 opencv-python-headless
 reportlab
 requests
+huggingface_hub>=0.28.0
 inference-sdk>=0.9.9,<1.0.0
 numpy
 firebase-admin
