@@ -1392,19 +1392,28 @@ def _analyze_engine_via_hf_api(wav_path: str, filename: str) -> dict:
     try:
         from huggingface_hub import InferenceClient
 
-        client = InferenceClient(token=HF_TOKEN)
+        client = InferenceClient(token=HF_TOKEN, timeout=45)
         rows = None
         last_err = None
-        for _ in range(6):
+        for attempt in range(4):
             try:
                 rows = client.audio_classification(wav_path, model=model)
                 break
             except Exception as e:
                 last_err = e
-                if "loading" in str(e).lower():
-                    time.sleep(12)
+                err_s = str(e).lower()
+                if attempt < 3 and ("loading" in err_s or "503" in err_s or "timeout" in err_s):
+                    time.sleep(8)
                     continue
-                raise
+                if "not supported" in err_s or "404" in err_s or "not found" in err_s:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=(
+                            "Engine model is not available on Hugging Face Inference. "
+                            "Try again in a minute, or deploy with Docker (Dockerfile) for local analysis."
+                        ),
+                    )
+                raise HTTPException(status_code=502, detail=f"Engine inference failed: {e}")
         if rows is None:
             raise HTTPException(status_code=502, detail=f"Engine inference failed: {last_err}")
         scores = {str(item.label): float(item.score) for item in rows}
@@ -1425,8 +1434,8 @@ def _analyze_engine_via_hf_api(wav_path: str, filename: str) -> dict:
         "Content-Type": "audio/wav",
     }
     response = None
-    for _ in range(6):
-        response = requests.post(url, headers=headers, data=audio_bytes, timeout=120)
+    for _ in range(4):
+        response = requests.post(url, headers=headers, data=audio_bytes, timeout=45)
         if response.status_code == 503 and "loading" in (response.text or "").lower():
             time.sleep(12)
             continue
@@ -1494,11 +1503,30 @@ def _convert_to_wav(input_path: str, target_sr: int) -> str:
     wav_path = input_path + "_converted.wav"
     result = subprocess.run(
         ["ffmpeg", "-y", "-i", input_path, "-ar", str(target_sr), "-ac", "1", "-f", "wav", wav_path],
-        capture_output=True, timeout=60,
+        capture_output=True,
+        timeout=25,
     )
     if result.returncode != 0:
-        raise HTTPException(status_code=500, detail=f"Audio conversion failed: {result.stderr.decode(errors='replace')[-600:]}")
+        err = result.stderr.decode(errors="replace")[-600:]
+        raise HTTPException(status_code=500, detail=f"Audio conversion failed: {err}")
     return wav_path
+
+
+def _engine_audio_path_for_inference(raw_path: str, filename: str, target_sr: int) -> str:
+    """Remote inference accepts ogg/webm; local torch needs wav via ffmpeg."""
+    if not _should_use_local_engine():
+        return raw_path
+    try:
+        return _convert_to_wav(raw_path, target_sr)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail="ffmpeg is required for engine audio on this server. Switch Render to Docker (Dockerfile.free).",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Audio conversion failed: {e}")
 
 
 def preprocess_audio(wav_path: str) -> str:
@@ -1555,13 +1583,14 @@ async def _analyze_engine_upload(audio: UploadFile) -> dict:
 
     wav_path = None
     cleaned_path = None
+    converted_path = None
     try:
-        try:
-            wav_path = _convert_to_wav(raw_path, target_sr)
-        except FileNotFoundError:
-            wav_path = raw_path
-
         filename = audio.filename or "engine.wav"
+        if _should_use_local_engine():
+            converted_path = _engine_audio_path_for_inference(raw_path, filename, target_sr)
+            wav_path = converted_path
+        else:
+            wav_path = raw_path
 
         if ENGINE_INFERENCE_URL:
             return await asyncio.to_thread(_analyze_engine_via_custom_url, wav_path, filename)
@@ -1605,8 +1634,8 @@ async def _analyze_engine_upload(audio: UploadFile) -> dict:
             detail="Engine analysis needs local torch or HF_TOKEN for cloud inference.",
         )
     finally:
-        for path in (raw_path, wav_path, cleaned_path):
-            if path and os.path.exists(path):
+        for path in {p for p in (raw_path, converted_path, cleaned_path) if p}:
+            if os.path.exists(path):
                 try:
                     os.remove(path)
                 except Exception:
@@ -1882,7 +1911,12 @@ async def ai_analysis_endpoint(req: AIAnalysisRequest):
 @app.post("/analyze-engine")
 async def analyze_engine(audio: UploadFile = File(...), _token=Depends(verify_token)):
     try:
-        return await _analyze_engine_upload(audio)
+        return await asyncio.wait_for(_analyze_engine_upload(audio), timeout=120.0)
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="Engine analysis timed out. Try a shorter clip or wait a minute and retry.",
+        )
     except HTTPException:
         raise
     except Exception as e:

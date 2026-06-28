@@ -11655,6 +11655,12 @@ async function finalizeRecording() {
  document.getElementById('alcProgressFill').style.width = pct + '%';
  document.getElementById('alcProgressPct').textContent = pct + '%';
  si++;
+ } else {
+ const hint = document.getElementById('alc-file-name');
+ if (hint && !hint.dataset.waiting) {
+ hint.dataset.waiting = '1';
+ hint.textContent = 'Waiting for AI… first run can take up to 2 minutes';
+ }
  }
  }, 500);
  }
@@ -11683,8 +11689,19 @@ async function finalizeRecording() {
  try {
  const authHdr = await getAuthBearerHeader(true);
  if (!authHdr) throw new Error('Please sign in to analyze engine audio');
- const res = await fetch(`${API}/analyze-engine`, { method: 'POST', headers: authHdr, body: fd });
- if (!res.ok) throw new Error((await res.json()).detail || 'Audio analysis failed');
+ const ctrl = new AbortController();
+ const abortTimer = setTimeout(() => ctrl.abort(), 150000);
+ let res;
+ try {
+ res = await fetch(`${API}/analyze-engine`, { method: 'POST', headers: authHdr, body: fd, signal: ctrl.signal });
+ } finally {
+ clearTimeout(abortTimer);
+ }
+ if (!res.ok) {
+ let detail = 'Audio analysis failed';
+ try { const j = await res.json(); detail = j.detail || detail; } catch (_) {}
+ throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+ }
  const data = await res.json();
  state.audioResult = data;
  hideAudioLoader();
@@ -11694,7 +11711,10 @@ async function finalizeRecording() {
  toast(data.is_knock ? '! Engine knock detected!' : '✓ Engine sounds healthy', data.is_knock ? 'error' : 'success');
  } catch (e) {
  hideAudioLoader();
- toast(e.message, 'error');
+ const msg = (e.name === 'AbortError')
+ ? 'Engine analysis timed out. Try a shorter recording or retry in a minute.'
+ : (e.message || 'Audio analysis failed');
+ toast(msg, 'error');
  }
  _audioRunning = false;
  if (analyzeBtn) analyzeBtn.disabled = false;
