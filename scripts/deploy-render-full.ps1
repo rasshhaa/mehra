@@ -1,14 +1,6 @@
-# Deploy AutoVault to Render (full stack — engine audio included)
-#
-# Option A — One-click (easiest):
-#   Open https://render.com/deploy?repo=https://github.com/rasshhaa/mehra
-#   Branch: prototype5 | Plan: Standard ($25/mo, 2 GB RAM)
-#   Paste env vars when prompted (see table below).
-#
-# Option B — Automated script:
-#   1. Create API key: https://dashboard.render.com/u/settings#api-keys
-#   2. $env:RENDER_API_KEY = "rnd_..."
-#   3. .\scripts\deploy-render-full.ps1
+# Deploy AutoVault to Render (full stack, engine audio included)
+# Option A: https://render.com/deploy?repo=https://github.com/rasshhaa/mehra
+# Option B: set RENDER_API_KEY then run this script
 
 $ErrorActionPreference = "Stop"
 $MehraRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -33,27 +25,24 @@ $dotenv  = Read-DotEnv $envFile
 
 if (-not $env:RENDER_API_KEY) {
     Write-Host ""
-    Write-Host "=== Render full deploy (engine + inspection + Firebase) ===" -ForegroundColor Cyan
+    Write-Host "=== Render full deploy ===" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "I can't create the service without your Render account."
-    Write-Host ""
-    Write-Host "FASTEST — open this link and click Deploy:" -ForegroundColor Green
+    Write-Host "Open this link and click Deploy:" -ForegroundColor Green
     Write-Host $DeployUrl
     Write-Host ""
-    Write-Host "When prompted, set:"
-    Write-Host "  Branch: prototype5"
-    Write-Host "  Plan:   Standard (2 GB — required for engine audio)"
+    Write-Host '  Branch: prototype5'
+    Write-Host '  Plan: Standard - 2 GB RAM for engine audio'
     Write-Host ""
-    Write-Host "Environment variables to paste:"
-    Write-Host "  GROQ_API_KEY                  = (from backend/.env)"
-    Write-Host "  ROBOFLOW_API_KEY              = (from backend/.env)"
-    Write-Host "  USE_FIRESTORE                 = 1"
-    Write-Host "  FIREBASE_PRIMARY_PROJECT_ID   = mehra-b3a7c"
-    Write-Host "  FIREBASE_SERVICE_ACCOUNT_JSON = (paste full serviceAccountKey.json)"
+    Write-Host "Environment variables:"
+    Write-Host "  GROQ_API_KEY"
+    Write-Host "  ROBOFLOW_API_KEY"
+    Write-Host "  USE_FIRESTORE=1"
+    Write-Host "  FIREBASE_PRIMARY_PROJECT_ID=mehra-b3a7c"
+    Write-Host "  FIREBASE_SERVICE_ACCOUNT_JSON = full serviceAccountKey.json"
     Write-Host ""
-    Write-Host "After deploy, add your *.onrender.com URL to Firebase Authorized domains."
+    Write-Host "After deploy, add your onrender.com URL to Firebase Authorized domains."
     Write-Host ""
-    Write-Host "Or set RENDER_API_KEY and re-run this script for automated deploy."
+    Write-Host "Or set RENDER_API_KEY and re-run for automated deploy."
     Start-Process $DeployUrl
     exit 0
 }
@@ -112,7 +101,7 @@ $body = @{
     )
 } | ConvertTo-Json -Depth 10
 
-Write-Host "Creating Render web service (Docker, Standard plan)..." -ForegroundColor Cyan
+Write-Host "Creating Render web service..." -ForegroundColor Cyan
 try {
     $service = Invoke-RestMethod -Uri "https://api.render.com/v1/services" -Headers $headers -Method Post -Body $body
 } catch {
@@ -129,7 +118,7 @@ if (-not $url) { $url = "https://dashboard.render.com" }
 Write-Host ""
 Write-Host "Deploy started!" -ForegroundColor Green
 Write-Host "Service: $($service.service.name)"
-Write-Host "URL:     $url"
+Write-Host "URL: $url"
 Write-Host ""
-Write-Host "Build takes 15-25 min (torch + deps). Watch logs in Render dashboard."
-Write-Host "Then add $url to Firebase Authorized domains."
+Write-Host "Build takes 15-25 minutes. Watch logs in Render dashboard."
+Write-Host "Then add the onrender.com URL to Firebase Authorized domains."
