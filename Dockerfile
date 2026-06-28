@@ -21,6 +21,8 @@ WORKDIR /app/backend
 
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
+ENV HF_HOME=/app/backend/.cache/huggingface
+RUN mkdir -p /app/backend/.cache/huggingface /app/backend/uploads
 
 EXPOSE 8000
 
