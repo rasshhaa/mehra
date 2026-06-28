@@ -1300,13 +1300,132 @@ def annotate_with_dual_model(image, enriched_parts, unmatched_sev):
             color_override=SEVERITY_COLORS["default"],
         )
 # ─────────────────────────────────────────────────────────────────────────────
-# ENGINE MODEL (unchanged from original)
+# ENGINE MODEL — local torch OR remote Hugging Face (for free/low-RAM hosting)
 # ─────────────────────────────────────────────────────────────────────────────
 _engine_extractor = _engine_model = _engine_labels = None
 _engine_target_sr = 16000
+ENGINE_HF_MODEL = os.getenv("ENGINE_HF_MODEL", "cxlrd/revix-AST-engine-knock").strip()
+HF_TOKEN = (os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY") or "").strip()
+ENGINE_INFERENCE_URL = os.getenv("ENGINE_INFERENCE_URL", "").strip()
+ENGINE_MODE = os.getenv("ENGINE_MODE", "auto").strip().lower()
 
 KNOCK_LABEL_KEYS = {"knock", "knocking", "engine_knock", "defective", "fault", "faulty"}
 CLEAN_LABEL_KEYS = {"no_knock", "no knock", "clean", "healthy", "normal", "ok", "good"}
+
+
+def _wav_duration_seconds(path: str) -> float:
+    try:
+        import wave
+        with wave.open(path, "rb") as w:
+            return round(w.getnframes() / float(w.getframerate() or 1), 2)
+    except Exception:
+        return 0.0
+
+
+def _torch_engine_available() -> bool:
+    try:
+        import importlib.util
+        return (
+            importlib.util.find_spec("torch") is not None
+            and importlib.util.find_spec("transformers") is not None
+        )
+    except Exception:
+        return False
+
+
+def _should_use_local_engine() -> bool:
+    if ENGINE_MODE == "remote":
+        return False
+    if ENGINE_MODE == "local":
+        return True
+    if _IS_VERCEL or not _torch_engine_available():
+        return False
+    return True
+
+
+def _parse_hf_classification_response(data) -> dict:
+    if isinstance(data, dict) and data.get("error"):
+        raise HTTPException(status_code=502, detail=str(data["error"]))
+    rows = data if isinstance(data, list) else []
+    if not rows:
+        raise HTTPException(status_code=502, detail="Empty engine inference response")
+    scores = {}
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        if not label:
+            continue
+        scores[label] = float(item.get("score") or 0)
+    if not scores:
+        raise HTTPException(status_code=502, detail="Could not parse engine inference response")
+    return scores
+
+
+def _engine_result_from_scores(scores: dict, *, filename: str, wav_path: str, model: str, inference: str) -> dict:
+    top_label = max(scores, key=scores.get)
+    return {
+        "verdict": top_label,
+        "is_knock": _label_is_knock(top_label),
+        "confidence": round(scores[top_label] * 100, 2),
+        "scores": [{"label": k, "score": round(v, 6)} for k, v in scores.items()],
+        "model": model,
+        "sample_rate": _engine_target_sr,
+        "audio_file": filename,
+        "duration_s": _wav_duration_seconds(wav_path),
+        "inference": inference,
+    }
+
+
+def _analyze_engine_via_hf_api(wav_path: str, filename: str) -> dict:
+    if not HF_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="Cloud engine analysis needs HF_TOKEN (free Hugging Face account).",
+        )
+    model = ENGINE_HF_MODEL or "cxlrd/revix-AST-engine-knock"
+    url = f"https://api-inference.huggingface.co/models/{model}"
+    with open(wav_path, "rb") as f:
+        audio_bytes = f.read()
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    response = None
+    for _ in range(6):
+        response = requests.post(url, headers=headers, data=audio_bytes, timeout=120)
+        if response.status_code == 503 and "loading" in (response.text or "").lower():
+            time.sleep(12)
+            continue
+        break
+    if response is None or response.status_code != 200:
+        detail = (response.text if response is not None else "no response")[:500]
+        raise HTTPException(status_code=502, detail=f"Engine inference failed: {detail}")
+    scores = _parse_hf_classification_response(response.json())
+    return _engine_result_from_scores(
+        scores, filename=filename, wav_path=wav_path, model=model, inference="huggingface-api",
+    )
+
+
+def _analyze_engine_via_custom_url(wav_path: str, filename: str) -> dict:
+    if not ENGINE_INFERENCE_URL:
+        raise HTTPException(status_code=503, detail="ENGINE_INFERENCE_URL is not configured.")
+    with open(wav_path, "rb") as f:
+        response = requests.post(
+            ENGINE_INFERENCE_URL,
+            files={"audio": (filename or "engine.wav", f, "audio/wav")},
+            timeout=120,
+        )
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Engine service error: {response.text[:500]}")
+    payload = response.json()
+    if isinstance(payload, dict) and payload.get("verdict"):
+        return payload
+    scores = _parse_hf_classification_response(payload)
+    return _engine_result_from_scores(
+        scores,
+        filename=filename,
+        wav_path=wav_path,
+        model=ENGINE_HF_MODEL or "remote",
+        inference="custom-url",
+    )
 
 
 def _label_is_knock(label: str) -> bool:
@@ -1392,12 +1511,7 @@ def _build_engine_result(
 
 
 async def _analyze_engine_upload(audio: UploadFile) -> dict:
-    try:
-        import librosa, torch
-    except ImportError:
-        raise HTTPException(status_code=503, detail="Audio libraries not installed.")
-
-    extractor, model, labels, target_sr = _get_engine_model()
+    target_sr = _engine_target_sr
     suffix = os.path.splitext(audio.filename or "audio.webm")[-1].lower() or ".webm"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         shutil.copyfileobj(audio.file, tmp)
@@ -1410,31 +1524,57 @@ async def _analyze_engine_upload(audio: UploadFile) -> dict:
             wav_path = _convert_to_wav(raw_path, target_sr)
         except FileNotFoundError:
             wav_path = raw_path
-        cleaned_path = preprocess_audio(wav_path)
-        waveform, _ = librosa.load(cleaned_path, sr=target_sr, mono=True)
-        waveform    = waveform.astype("float32")
-        duration_s  = round(len(waveform) / target_sr, 2)
-        inputs      = extractor(waveform, sampling_rate=target_sr, return_tensors="pt")
-        with torch.no_grad():
-            logits = model(**inputs).logits
-        probs     = torch.softmax(logits, dim=-1)[0]
-        scores    = {labels[i]: float(probs[i]) for i in range(len(probs))}
-        top_label = max(scores, key=scores.get)
-        return {
-            "verdict": top_label,
-            "is_knock": _label_is_knock(top_label),
-            "confidence": round(scores[top_label] * 100, 2),
-            "scores": [{"label": k, "score": round(v, 6)} for k, v in scores.items()],
-            "model": "cxlrd/revix-AST-engine-knock",
-            "sample_rate": target_sr,
-            "audio_file": audio.filename,
-            "duration_s": duration_s,
-        }
+
+        filename = audio.filename or "engine.wav"
+
+        if ENGINE_INFERENCE_URL:
+            return await asyncio.to_thread(_analyze_engine_via_custom_url, wav_path, filename)
+
+        if _should_use_local_engine():
+            try:
+                import librosa, torch
+            except ImportError:
+                if HF_TOKEN:
+                    return await asyncio.to_thread(_analyze_engine_via_hf_api, wav_path, filename)
+                raise HTTPException(status_code=503, detail="Audio libraries not installed.")
+
+            extractor, model, labels, target_sr = _get_engine_model()
+            cleaned_path = preprocess_audio(wav_path)
+            waveform, _ = librosa.load(cleaned_path, sr=target_sr, mono=True)
+            waveform = waveform.astype("float32")
+            duration_s = round(len(waveform) / target_sr, 2)
+            inputs = extractor(waveform, sampling_rate=target_sr, return_tensors="pt")
+            with torch.no_grad():
+                logits = model(**inputs).logits
+            probs = torch.softmax(logits, dim=-1)[0]
+            scores = {labels[i]: float(probs[i]) for i in range(len(probs))}
+            top_label = max(scores, key=scores.get)
+            return {
+                "verdict": top_label,
+                "is_knock": _label_is_knock(top_label),
+                "confidence": round(scores[top_label] * 100, 2),
+                "scores": [{"label": k, "score": round(v, 6)} for k, v in scores.items()],
+                "model": "cxlrd/revix-AST-engine-knock",
+                "sample_rate": target_sr,
+                "audio_file": filename,
+                "duration_s": duration_s,
+                "inference": "local",
+            }
+
+        if HF_TOKEN:
+            return await asyncio.to_thread(_analyze_engine_via_hf_api, wav_path, filename)
+
+        raise HTTPException(
+            status_code=503,
+            detail="Engine analysis needs local torch or HF_TOKEN for cloud inference.",
+        )
     finally:
         for path in (raw_path, wav_path, cleaned_path):
             if path and os.path.exists(path):
-                try: os.remove(path)
-                except: pass
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1705,11 +1845,6 @@ async def ai_analysis_endpoint(req: AIAnalysisRequest):
 
 @app.post("/analyze-engine")
 async def analyze_engine(audio: UploadFile = File(...), _token=Depends(verify_token)):
-    if _IS_VERCEL:
-        raise HTTPException(
-            status_code=503,
-            detail="Engine audio analysis is unavailable on Vercel (torch/librosa not bundled). Use photo inspection instead.",
-        )
     try:
         return await _analyze_engine_upload(audio)
     except HTTPException:

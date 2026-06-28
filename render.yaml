@@ -1,13 +1,14 @@
-# Render Blueprint — full app (engine audio + inspection + Firebase)
-# One-click: https://render.com/deploy?repo=https://github.com/rasshhaa/mehra
+# Render Blueprint — full app
+# Free + engine: use Dockerfile.free + HF_TOKEN (Hugging Face Inference API)
+# Paid Standard: use Dockerfile (local torch, no HF token required)
 services:
   - type: web
     name: autovault
     runtime: docker
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./Dockerfile.free
     dockerContext: .
     branch: prototype5
-    plan: standard
+    plan: free
     region: frankfurt
     healthCheckPath: /health
     envVars:
@@ -17,11 +18,13 @@ services:
         value: "1"
       - key: FIREBASE_PRIMARY_PROJECT_ID
         value: mehra-b3a7c
-      - key: HF_HOME
-        value: /app/backend/.cache/huggingface
+      - key: ENGINE_MODE
+        value: remote
       - key: GROQ_API_KEY
         sync: false
       - key: ROBOFLOW_API_KEY
+        sync: false
+      - key: HF_TOKEN
         sync: false
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false

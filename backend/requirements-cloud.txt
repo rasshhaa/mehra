@@ -1,0 +1,10 @@
+# Slim cloud deps — engine uses Hugging Face Inference API (set HF_TOKEN)
+fastapi
+uvicorn[standard]
+python-multipart
+opencv-python-headless
+reportlab
+requests
+inference-sdk
+numpy
+firebase-admin
